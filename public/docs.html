@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeliveryFlow API仕様</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">OPENAPI 3.0.3</p><h1>DeliveryFlow API</h1></div>
+    <a href="/">アプリへ戻る</a>
+  </header>
+  <main>
+    <section class="card">
+      <p class="eyebrow">API CONTRACT</p>
+      <h2>状態遷移を守るAPI</h2>
+      <p>画面や他のクライアントがサーバーをどう呼ぶかを決める契約書です。実際のOpenAPIファイルは <a href="/openapi.yaml">openapi.yaml</a> です。</p>
+      <p>認証済みのPOSTには <code>Idempotency-Key</code> が必要です。同じキーの再送には保存済みの結果を返すため、二重操作を防げます。</p>
+    </section>
+    <section class="card">
+      <h2>エンドポイント</h2>
+      <dl>
+        <dt>GET /api/dashboard</dt><dd>現在の配達員・オファー・配達を取得し、期限切れも反映</dd>
+        <dt>POST /api/shifts/start</dt><dd>OFFLINE → IDLE</dd>
+        <dt>POST /api/shifts/end</dt><dd>IDLE → OFFLINE、またはOfferを暗黙に辞退してOFFERED → OFFLINE</dd>
+        <dt>POST /api/offers/current</dt><dd>IDLE → OFFERED</dd>
+        <dt>POST /api/offers/:id/accept</dt><dd>DriverはBUSY、OrderはASSIGNED、他のOfferはWITHDRAWN</dd>
+        <dt>POST /api/offers/:id/reject</dt><dd>DriverはIDLE、OfferはREJECTED</dd>
+        <dt>POST /api/assignments/:id/pickup</dt><dd>ASSIGNED → PICKED_UP</dd>
+        <dt>POST /api/assignments/:id/complete</dt><dd>PICKED_UP → DELIVERED、DriverはIDLE</dd>
+      </dl>
+    </section>
+    <section class="learn">
+      <p class="eyebrow">WHY OPENAPI</p>
+      <p>iOS版、Web版、バックエンドが同じAPIの形を共有できます。実装を変える前に契約を更新すれば、チーム開発での認識ずれを減らせます。</p>
+    </section>
+  </main>
+</body>
+</html>

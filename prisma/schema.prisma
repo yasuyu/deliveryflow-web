@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client-v2"
+}
+
+model IdempotencyKey {
+  id         Int      @id @default(autoincrement())
+  key        String
+  endpoint   String
+  driverId   Int
+
+  response   String?
+  statusCode Int?
+  createdAt  DateTime @default(now())
+
+  @@unique([key, endpoint, driverId])
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Driver {
+  id             Int          @id @default(autoincrement())
+  name           String
+  status         String       @default("OFFLINE")
+  shiftStartedAt DateTime?
+  offers         Offer[]
+  assignments    Assignment[]
+}
+
+model Store {
+  id      Int     @id @default(autoincrement())
+  name    String
+  address String
+  orders  Order[]
+}
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  storeId     Int
+  pickupName  String
+  dropoffName String
+  status      String      @default("CREATED")
+  store       Store       @relation(fields: [storeId], references: [id])
+  offers      Offer[]
+  assignment  Assignment?
+}
+
+model Offer {
+  id        Int       @id @default(autoincrement())
+  orderId   Int
+  driverId  Int
+  status    String    @default("PENDING")
+  expiresAt DateTime?
+  order     Order     @relation(fields: [orderId], references: [id])
+  driver    Driver    @relation(fields: [driverId], references: [id])
+}
+
+model Assignment {
+  id          Int       @id @default(autoincrement())
+  orderId     Int       @unique
+  driverId    Int
+  acceptedAt  DateTime  @default(now())
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+  order       Order     @relation(fields: [orderId], references: [id])
+  driver      Driver    @relation(fields: [driverId], references: [id])
+}

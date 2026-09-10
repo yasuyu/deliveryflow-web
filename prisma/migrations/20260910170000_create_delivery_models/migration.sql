@@ -1,0 +1,42 @@
+-- ここで学習用の乗車依頼モデルから、ハッカソン仕様の配送モデルへ切り替える。
+-- 旧Orderテーブルのデータ構造は互換性がないため作り直す。
+DROP TABLE "Order";
+
+CREATE TABLE "Driver" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "name" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'OFFLINE',
+  "shiftStartedAt" DATETIME
+);
+CREATE TABLE "Store" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "name" TEXT NOT NULL,
+  "address" TEXT NOT NULL
+);
+CREATE TABLE "Order" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "storeId" INTEGER NOT NULL,
+  "pickupName" TEXT NOT NULL,
+  "dropoffName" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'CREATED',
+  CONSTRAINT "Order_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "Store" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE TABLE "Offer" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "orderId" INTEGER NOT NULL,
+  "driverId" INTEGER NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'PENDING',
+  CONSTRAINT "Offer_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT "Offer_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "Driver" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE TABLE "Assignment" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "orderId" INTEGER NOT NULL,
+  "driverId" INTEGER NOT NULL,
+  "acceptedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "pickedUpAt" DATETIME,
+  "deliveredAt" DATETIME,
+  CONSTRAINT "Assignment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT "Assignment_driverId_fkey" FOREIGN KEY ("driverId") REFERENCES "Driver" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "Assignment_orderId_key" ON "Assignment"("orderId");

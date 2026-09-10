@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeliveryFlow 配達員アプリ</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">HACKATHON REBUILD · DRIVER CLIENT</p><h1>DeliveryFlow</h1></div>
+    <a href="/docs">API仕様</a>
+  </header>
+  <main>
+    <section id="registrationCard" class="card hidden">
+      <p class="eyebrow">POST /api/drivers</p>
+      <h2>配達員を登録</h2>
+      <p>登録後に発行されるIDを、BearerトークンとしてAPIへ送ります。</p>
+      <form id="registrationForm">
+        <label>配達員名<input name="name" placeholder="例: 山田 太郎" required></label>
+        <button type="submit">登録して始める</button>
+      </form>
+    </section>
+
+    <div id="workflow" class="hidden">
+      <section class="hero">
+        <div><p class="eyebrow">DELIVERY LIFECYCLE</p><h2>正しい状態遷移で、<br>配達を完了する。</h2><p>元資料の状態遷移をブラウザ上で追える最小構成です。</p></div>
+        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="shiftStartedAt"></small></aside>
+      </section>
+      <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
+      <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message">読み込み中です。</p><div id="actions"></div></section>
+      <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>配達詳細</h2><div id="deliveryDetail"></div></section>
+      <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する許可証です。この学習版では配達員IDを使います。実サービスでは推測できない安全なトークンを使用します。</p></section>
+    </div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

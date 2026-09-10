@@ -1,0 +1,123 @@
+openapi: 3.0.3
+info:
+  title: DeliveryFlow API
+  version: 0.1.0
+  description: 配達員の稼働と配達ライフサイクルを扱う学習用API
+security:
+  - bearerAuth: []
+paths:
+  /api/drivers:
+    post:
+      summary: 配達員を登録して識別用IDを発行する
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: 山田太郎 }
+      responses:
+        '201': { description: 配達員登録成功 }
+        '400': { description: 入力値が不正 }
+  /api/dashboard:
+    get:
+      summary: 配達員・現在のオファー・担当配達を取得する
+      responses:
+        '200': { description: 現在のダッシュボード状態 }
+  /api/shifts/start:
+    post:
+      summary: 稼働を開始する OFFLINE to IDLE
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: 稼働開始成功 }
+        '409': { description: すでに稼働中 }
+  /api/shifts/end:
+    post:
+      summary: 退勤する IDLEまたはOFFEREDからOFFLINE
+      description: OFFEREDの場合は保留中のOfferをREJECTEDにしてから退勤する
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: 退勤成功 }
+        '409': { description: 待機中以外のため退勤不可 }
+  /api/offers/current:
+    post:
+      summary: 現在のオファーを確認する IDLE to OFFERED
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: オファー確認成功 }
+        '404': { description: オファーなし }
+  /api/offers/{offerId}/accept:
+    post:
+      summary: オファーを受諾する
+      description: DriverをOFFEREDからBUSY、OfferをPENDINGからACCEPTED、OrderをOFFERINGからASSIGNEDへ変更する。他の保留OfferはWITHDRAWNになる。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: 受諾成功 }
+        '409': { description: すでに処理済み }
+  /api/offers/{offerId}/reject:
+    post:
+      summary: オファーを辞退する
+      description: DriverをOFFEREDからIDLE、OfferをPENDINGからREJECTEDへ変更する。候補が尽きたOrderはCREATEDへ戻る。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: 辞退成功 }
+  /api/assignments/{assignmentId}/pickup:
+    post:
+      summary: 荷物を受け取る ASSIGNED to PICKED_UP
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: 受取成功 }
+  /api/assignments/{assignmentId}/complete:
+    post:
+      summary: 配達を完了する PICKED_UP to DELIVERED
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: 配達完了 }
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 通信を再送しても同じ処理を二重実行しないための、操作ごとに一意なキー
+      schema:
+        type: string
+        example: 550e8400-e29b-41d4-a716-446655440000
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: POST /api/driversで発行された配達員IDを指定する学習用の仮認証
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: INVALID_STATE_TRANSITION }
+        message: { type: string, example: 待機中のときだけ退勤できます }
