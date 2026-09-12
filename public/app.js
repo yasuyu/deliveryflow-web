@@ -14,8 +14,12 @@ const registrationCard = document.querySelector('#registrationCard');
 const registrationForm = document.querySelector('#registrationForm');
 const loginForm = document.querySelector('#loginForm');
 const workflow = document.querySelector('#workflow');
+const completedDeliveryCount = document.querySelector('#completedDeliveryCount');
+const lastDeliveredAt = document.querySelector('#lastDeliveredAt');
+const deliveryHistoryList = document.querySelector('#deliveryHistory');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
+let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
 let isLoading = false;
 
 function setMessage(text, kind = 'info') {
@@ -82,6 +86,27 @@ function showOrder(order, extraLabel, extraValue) {
   </dl>`;
 }
 
+function renderHistory() {
+  completedDeliveryCount.textContent = String(historyState.summary.completedDeliveries);
+  lastDeliveredAt.textContent = historyState.summary.lastDeliveredAt
+    ? `最終配達: ${formatJapanTime(historyState.summary.lastDeliveredAt)}`
+    : 'まだ完了した配達はありません。';
+  deliveryHistoryList.replaceChildren();
+
+  for (const assignment of historyState.deliveries) {
+    const item = document.createElement('li');
+    const title = document.createElement('strong');
+    const route = document.createElement('span');
+    const time = document.createElement('time');
+    title.textContent = assignment.order.store.name;
+    route.textContent = `${assignment.order.pickupName} → ${assignment.order.dropoffName}`;
+    time.dateTime = assignment.deliveredAt;
+    time.textContent = formatJapanTime(assignment.deliveredAt);
+    item.append(title, route, time);
+    deliveryHistoryList.append(item);
+  }
+}
+
 function render() {
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
   document.querySelector('#driverName').textContent = state.driver.name;
@@ -92,6 +117,7 @@ function render() {
 
   actions.innerHTML = '';
   card.classList.add('hidden');
+  renderHistory();
 
   if (state.driver.status === 'OFFLINE') {
     actions.innerHTML = button('稼働を開始する', 'start');
@@ -158,6 +184,12 @@ async function refresh({ preserveMessage = false } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
+    const historyResponse = await fetch('/api/deliveries/history', {
+      headers: { Authorization: `Bearer ${driverToken}` },
+    });
+    const history = await historyResponse.json().catch(() => ({}));
+    if (!historyResponse.ok) throw new Error(`${history.code}: ${history.message}`);
+    historyState = history;
     registrationCard.classList.add('hidden');
     workflow.classList.remove('hidden');
     render();

@@ -12,6 +12,8 @@ services:
       retries: 10
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
 
   app:
     build: .
@@ -20,11 +22,34 @@ services:
         condition: service_healthy
     environment:
       DATABASE_PROVIDER: postgresql
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public&sslmode=disable
       PORT: 3000
       OFFER_TTL_SECONDS: 120
     ports:
       - "${APP_PORT:-3106}:3000"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./server.js
+          target: /app/server.js
+        - action: sync
+          path: ./public
+          target: /app/public
+        - action: sync
+          path: ./docs
+          target: /app/docs
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./prisma
+        - action: rebuild
+          path: ./prisma.config.ts
+        - action: rebuild
+          path: ./Dockerfile
+        - action: rebuild
+          path: ./docker-entrypoint.sh
 
 volumes:
   postgres-data:

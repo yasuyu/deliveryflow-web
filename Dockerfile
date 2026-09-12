@@ -8,6 +8,8 @@ RUN apt-get update \
 
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci
+RUN mkdir -p node_modules/prisma/engines \
+    && chown -R node:node node_modules/prisma/engines
 
 COPY --chown=node:node prisma ./prisma
 COPY --chown=node:node prisma.config.ts ./
@@ -22,7 +24,7 @@ COPY --chown=node:node docs ./docs
 COPY docker-entrypoint.sh ./
 
 RUN mkdir /data && chown node:node /data
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 ENV NODE_ENV=production
 ENV PORT=3000

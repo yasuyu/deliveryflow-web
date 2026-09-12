@@ -61,6 +61,7 @@ npm run db:studio      # Prisma StudioでDBを見る
 `npm test` は開発用の `delivery.db` を使いません。テスト実行ごとに一時的なSQLiteデータベースを作り、Migrationを適用してからAPIを起動します。現在は次を確認しています。
 
 - 配達員が稼働開始し、オファーを表示・受諾・受取・完了できること
+- 完了した配達を本人の履歴と実績件数で確認できること
 - 状態が `IDLE` → `OFFERED` → `BUSY` → `IDLE` と正しく変わること
 - 同じ `Idempotency-Key` の再送が同じ結果を返すこと
 - Bearerトークンなしでは配達員用APIを呼べないこと
@@ -69,6 +70,10 @@ npm run db:studio      # Prisma StudioでDBを見る
 - 勤務中はログアウトできず、OFFLINEの場合だけログアウトできること
 
 テスト用DBは終了時に自動で削除されます。Node.js 22の標準SQLite機能を使っているため、追加のテスト用パッケージは不要です。
+
+## 配達履歴と実績
+
+配達を完了すると、配達員画面の「配達実績」に完了件数、最終配達時刻、直近20件の履歴が表示されます。`GET /api/deliveries/history` はBearerトークンで認証した配達員本人の完了済みデータだけを返します。
 
 ## Dockerで起動する
 
@@ -115,6 +120,25 @@ docker compose --env-file .env.postgres up --build -d
 docker compose --env-file .env.postgres ps
 docker compose --env-file .env.postgres logs app
 ```
+
+機能開発中はDocker Compose 2.22以降のWatchを使うと、長いコマンドを毎回入力せずに変更を自動反映できます。
+
+```powershell
+docker compose version
+npm run dev:postgres
+```
+
+このPowerShellを開いたままにすると、`public/`と`docs/`は保存時に同期され、`server.js`は同期後にアプリが再起動します。依存関係、Prisma、Docker関連ファイルの変更時はイメージが自動で再ビルドされます。Watchを終了するときは `Ctrl + C` を押します。Watchは開発用であり、PCやDocker Desktop自体を自動起動する機能ではありません。
+
+PostgreSQLのデータをPrisma Studioで確認する場合は、Watchを動かしたまま別のPowerShellで次を実行し、<http://localhost:5555> を開きます。StudioはWindows側のPrismaから、PC内だけに公開した `127.0.0.1:5433` 経由でPostgreSQLへ接続します。
+
+```powershell
+npm run studio:postgres
+```
+
+Prisma Studioを終了するときは、そのPowerShellで `Ctrl + C` を押します。画面からデータを直接変更・削除できるため、確認だけの場合は編集しないよう注意してください。
+
+ローカルのPostgreSQL接続は同じPCまたはDockerネットワーク内に限られるため、`DATABASE_URL`で `sslmode=disable` を指定します。PostgreSQLのホスト側ポートは `.env.postgres` の `POSTGRES_HOST_PORT` で変更でき、未指定時は5433です。将来クラウド上のPostgreSQLへ接続するときは、配備先の指示に従ってTLSを有効にします。
 
 ブラウザで <http://localhost:3106> を開きます。`db` のヘルスチェックが成功してから `app` が起動し、PostgreSQL用Migrationを自動適用します。
 
