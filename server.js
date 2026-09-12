@@ -1,7 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { createHash, randomBytes, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
+const { createHash, randomBytes, randomUUID, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
 const { promisify } = require('util');
 
 const maximumJsonBodyBytes = 1_000_000;
@@ -9,6 +9,12 @@ const scrypt = promisify(scryptCallback);
 const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const loginFailures = new Map();
+const startedAt = Date.now();
+const metrics = {
+  requestCount: 0,
+  serverErrorCount: 0,
+  totalResponseMilliseconds: 0,
+};
 
 const databaseProvider = process.env.DATABASE_PROVIDER || 'sqlite';
 if (!['sqlite', 'postgresql'].includes(databaseProvider)) {
@@ -52,6 +58,38 @@ function json(response, status, body) {
     'Content-Type': 'application/json; charset=utf-8',
   });
   response.end(JSON.stringify(body));
+}
+
+function logRequest(request, response, requestId, startedRequestAt) {
+  const durationMilliseconds = Date.now() - startedRequestAt;
+  metrics.requestCount += 1;
+  metrics.totalResponseMilliseconds += durationMilliseconds;
+  if (response.statusCode >= 500) metrics.serverErrorCount += 1;
+
+  // Do not log the query string or headers: they can contain credentials or personal data.
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: response.statusCode >= 500 ? 'error' : 'info',
+    event: 'http_request',
+    requestId,
+    method: request.method,
+    path: new URL(request.url, `http://${request.headers.host}`).pathname,
+    statusCode: response.statusCode,
+    durationMilliseconds,
+  }));
+}
+
+function metricsBody() {
+  const averageResponseMilliseconds = metrics.requestCount
+    ? Number((metrics.totalResponseMilliseconds / metrics.requestCount).toFixed(2))
+    : 0;
+  return {
+    status: 'ok',
+    uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
+    requests: metrics.requestCount,
+    serverErrors: metrics.serverErrorCount,
+    averageResponseMilliseconds,
+  };
 }
 
 function securityHeaders() {
@@ -511,6 +549,14 @@ async function logoutDriver(driver) {
 async function handle(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
+  if (request.method === 'GET' && url.pathname === '/healthz') {
+    await prisma.$queryRaw`SELECT 1`;
+    return json(response, 200, { status: 'ok', database: 'connected' });
+  }
+  if (request.method === 'GET' && url.pathname === '/metrics') {
+    return json(response, 200, metricsBody());
+  }
+
   if (request.method === 'GET' && url.pathname === '/') return serveFile(response, 'index.html', 'text/html; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/docs') return serveFile(response, 'docs.html', 'text/html; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/openapi.yaml') return serveFile(response, '../docs/openapi.yaml', 'text/yaml; charset=utf-8');
@@ -614,10 +660,22 @@ async function handle(request, response) {
 }
 
 const server = http.createServer(async (request, response) => {
+  const requestId = randomUUID();
+  const startedRequestAt = Date.now();
+  response.setHeader('X-Request-Id', requestId);
+  response.on('finish', () => logRequest(request, response, requestId, startedRequestAt));
   try {
     await handle(request, response);
   } catch (error) {
-    console.error(error);
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      event: 'request_failed',
+      requestId,
+      errorName: error.name,
+      errorCode: error.code || 'INTERNAL_ERROR',
+      message: error.status ? error.message : 'Unexpected server error',
+    }));
     json(response, error.status || 500, {
       code: error.code || 'INTERNAL_ERROR',
       message: error.status ? error.message : 'サーバーでエラーが発生しました',

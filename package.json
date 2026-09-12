@@ -9,6 +9,7 @@
     "start": "node --env-file=.env server.js",
     "check": "node --check server.js && node --check public/app.js",
     "test": "node --test",
+    "load-test": "node scripts/load.js",
     "test:postgresql-smoke": "node scripts/postgresql-smoke.js",
     "db:generate": "node --env-file=.env node_modules/prisma/build/index.js generate",
     "db:migrate": "node --env-file=.env node_modules/prisma/build/index.js migrate dev",
