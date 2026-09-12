@@ -73,7 +73,9 @@ npm run db:studio      # Prisma StudioでDBを見る
 
 ## 配達履歴と実績
 
-配達を完了すると、配達員画面の「配達実績」に完了件数、最終配達時刻、直近20件の履歴が表示されます。`GET /api/deliveries/history` はBearerトークンで認証した配達員本人の完了済みデータだけを返します。
+配達を完了すると、配達員画面の「配達実績」に完了件数、最終配達時刻、直近20件の履歴が表示されます。状態、店舗・配送先名、開始日、終了日で絞り込めます。初期表示は従来どおり完了済みの配送だけです。
+
+`GET /api/deliveries/history` はBearerトークンで認証した配達員本人のデータだけを返します。`status`（`ALL`、`ASSIGNED`、`PICKED_UP`、`DELIVERED`）、`query`、`from`、`to`をクエリパラメーターに指定できます。日付は日本時間を基準にし、不正な条件には`400 VALIDATION_ERROR`を返します。
 
 ## Dockerで起動する
 

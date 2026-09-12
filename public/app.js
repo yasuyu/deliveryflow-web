@@ -17,6 +17,9 @@ const workflow = document.querySelector('#workflow');
 const completedDeliveryCount = document.querySelector('#completedDeliveryCount');
 const lastDeliveredAt = document.querySelector('#lastDeliveredAt');
 const deliveryHistoryList = document.querySelector('#deliveryHistory');
+const historyFilterForm = document.querySelector('#historyFilterForm');
+const historyFilterReset = document.querySelector('#historyFilterReset');
+const historyResultCount = document.querySelector('#historyResultCount');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
@@ -92,17 +95,30 @@ function renderHistory() {
     ? `最終配達: ${formatJapanTime(historyState.summary.lastDeliveredAt)}`
     : 'まだ完了した配達はありません。';
   deliveryHistoryList.replaceChildren();
+  historyResultCount.textContent = `条件に一致 ${historyState.summary.filteredDeliveries ?? historyState.deliveries.length}件（最大20件表示）`;
+
+  if (!historyState.deliveries.length) {
+    const item = document.createElement('li');
+    item.className = 'history-empty';
+    item.textContent = '条件に一致する配達はありません。';
+    deliveryHistoryList.append(item);
+    return;
+  }
 
   for (const assignment of historyState.deliveries) {
     const item = document.createElement('li');
     const title = document.createElement('strong');
     const route = document.createElement('span');
     const time = document.createElement('time');
+    const status = document.createElement('span');
     title.textContent = assignment.order.store.name;
     route.textContent = `${assignment.order.pickupName} → ${assignment.order.dropoffName}`;
-    time.dateTime = assignment.deliveredAt;
-    time.textContent = formatJapanTime(assignment.deliveredAt);
-    item.append(title, route, time);
+    const occurredAt = assignment.deliveredAt || assignment.pickedUpAt || assignment.acceptedAt;
+    time.dateTime = occurredAt;
+    time.textContent = formatJapanTime(occurredAt);
+    status.className = 'history-status';
+    status.textContent = { ASSIGNED: '受諾済み', PICKED_UP: '受取済み', DELIVERED: '完了' }[assignment.order.status] || assignment.order.status;
+    item.append(title, route, status, time);
     deliveryHistoryList.append(item);
   }
 }
@@ -184,7 +200,8 @@ async function refresh({ preserveMessage = false } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
-    const historyResponse = await fetch('/api/deliveries/history', {
+    const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
+    const historyResponse = await fetch(`/api/deliveries/history?${historyParameters}`, {
       headers: { Authorization: `Bearer ${driverToken}` },
     });
     const history = await historyResponse.json().catch(() => ({}));
@@ -281,6 +298,29 @@ actions.addEventListener('click', async (event) => {
     setMessage(`${actionName}が完了しました。`, 'success');
   } catch (error) {
     setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+});
+
+historyFilterForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setLoading(true);
+  setMessage('配達履歴を絞り込んでいます。', 'loading');
+  try {
+    await refresh({ preserveMessage: true });
+    setMessage('配達履歴を更新しました。', 'success');
+  } finally {
+    setLoading(false);
+  }
+});
+
+historyFilterReset.addEventListener('click', async () => {
+  historyFilterForm.reset();
+  setLoading(true);
+  try {
+    await refresh({ preserveMessage: true });
+    setMessage('絞り込み条件をリセットしました。', 'success');
   } finally {
     setLoading(false);
   }

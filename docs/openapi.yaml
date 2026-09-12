@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.2.0
+  version: 0.3.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -49,8 +49,14 @@ paths:
   /api/deliveries/history:
     get:
       summary: ログイン中の配達員の完了実績を新しい順に最大20件取得する
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ALL, ASSIGNED, PICKED_UP, DELIVERED], default: DELIVERED }, description: 配送状態 }
+        - { name: query, in: query, schema: { type: string, maxLength: 100 }, description: 店舗・受取先・配送先の部分一致検索 }
+        - { name: from, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の開始日（日本時間） }
+        - { name: to, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の終了日（日本時間） }
       responses:
         '200': { description: 完了件数、最終配達時刻、配達履歴 }
+        '400': { description: 絞り込み条件が不正 }
         '401': { description: Bearerトークンが不正 }
   /api/shifts/start:
     post:
