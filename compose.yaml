@@ -32,15 +32,12 @@ services:
         - action: sync+restart
           path: ./server.js
           target: /app/server.js
-          initial_sync: true
         - action: sync
           path: ./public
           target: /app/public
-          initial_sync: true
         - action: sync
           path: ./docs
           target: /app/docs
-          initial_sync: true
         - action: rebuild
           path: ./package.json
         - action: rebuild
