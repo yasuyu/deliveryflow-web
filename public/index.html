@@ -40,7 +40,20 @@
       <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
       <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
       <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>配達詳細</h2><div id="deliveryDetail"></div></section>
-      <section class="card"><p class="eyebrow">DELIVERY HISTORY</p><h2>配達実績</h2><p class="history-summary">完了した配達 <strong id="completedDeliveryCount">0</strong> 件</p><p id="lastDeliveredAt">まだ完了した配達はありません。</p><ol id="deliveryHistory" class="history-list"></ol></section>
+      <section class="card">
+        <p class="eyebrow">DELIVERY HISTORY</p><h2>配達実績</h2>
+        <p class="history-summary">完了した配達 <strong id="completedDeliveryCount">0</strong> 件</p>
+        <p id="lastDeliveredAt">まだ完了した配達はありません。</p>
+        <form id="historyFilterForm" class="history-filter">
+          <label>状態<select name="status"><option value="DELIVERED">完了</option><option value="PICKED_UP">受取済み</option><option value="ASSIGNED">受諾済み</option><option value="ALL">すべて</option></select></label>
+          <label>配送先・店舗<input name="query" maxlength="100" placeholder="名前の一部を入力"></label>
+          <label>開始日<input name="from" type="date"></label>
+          <label>終了日<input name="to" type="date"></label>
+          <div class="history-filter__actions"><button type="submit">絞り込む</button><button type="button" id="historyFilterReset" class="button-secondary">リセット</button></div>
+        </form>
+        <p id="historyResultCount" class="history-result-count">表示結果 0件</p>
+        <ol id="deliveryHistory" class="history-list"></ol>
+      </section>
       <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する、推測困難な許可証です。ログイン時に発行され、ログアウトすると無効になります。</p></section>
     </div>
   </main>

@@ -361,22 +361,98 @@ async function dashboard(driverId) {
   };
 }
 
-async function deliveryHistory(driverId) {
-  const [completedDeliveries, deliveries] = await prisma.$transaction([
+function parseHistoryDate(value, fieldName) {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${fieldName}はYYYY-MM-DD形式で指定してください`);
+  }
+  const utcDate = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(utcDate.getTime()) || utcDate.toISOString().slice(0, 10) !== value) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${fieldName}に正しい日付を指定してください`);
+  }
+  return new Date(`${value}T00:00:00+09:00`);
+}
+
+function historyFilters(searchParams) {
+  const status = (searchParams.get('status') || 'DELIVERED').toUpperCase();
+  if (!['ALL', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'].includes(status)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'statusが正しくありません');
+  }
+  const query = (searchParams.get('query') || '').trim();
+  if (query.length > 100) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '検索文字は100文字以内で指定してください');
+  }
+  const fromValue = searchParams.get('from') || '';
+  const toValue = searchParams.get('to') || '';
+  const from = parseHistoryDate(fromValue, 'from');
+  const to = parseHistoryDate(toValue, 'to');
+  if (from && to && from > to) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '開始日は終了日以前にしてください');
+  }
+  if (to) to.setUTCDate(to.getUTCDate() + 1);
+  return { status, query, fromValue, toValue, from, to };
+}
+
+async function deliveryHistory(driverId, searchParams) {
+  const filters = historyFilters(searchParams);
+  const where = { driverId };
+  if (filters.status === 'DELIVERED') where.deliveredAt = { not: null };
+  if (filters.status === 'PICKED_UP') {
+    where.pickedUpAt = { not: null };
+    where.deliveredAt = null;
+  }
+  if (filters.status === 'ASSIGNED') {
+    where.pickedUpAt = null;
+    where.deliveredAt = null;
+  }
+  if (filters.query) {
+    where.order = {
+      OR: [
+        { pickupName: { contains: filters.query } },
+        { dropoffName: { contains: filters.query } },
+        { store: { name: { contains: filters.query } } },
+      ],
+    };
+  }
+  const dateField = filters.status === 'DELIVERED'
+    ? 'deliveredAt'
+    : filters.status === 'PICKED_UP' ? 'pickedUpAt' : 'acceptedAt';
+  if (filters.from || filters.to) {
+    where[dateField] = {
+      ...(where[dateField] || {}),
+      ...(filters.from ? { gte: filters.from } : {}),
+      ...(filters.to ? { lt: filters.to } : {}),
+    };
+  }
+
+  const [completedDeliveries, latestCompleted, filteredDeliveries, deliveries] = await prisma.$transaction([
     prisma.assignment.count({
       where: { driverId, deliveredAt: { not: null } },
     }),
-    prisma.assignment.findMany({
+    prisma.assignment.findFirst({
       where: { driverId, deliveredAt: { not: null } },
-      include: { order: { include: { store: true } } },
       orderBy: { deliveredAt: 'desc' },
+      select: { deliveredAt: true },
+    }),
+    prisma.assignment.count({ where }),
+    prisma.assignment.findMany({
+      where,
+      include: { order: { include: { store: true } } },
+      orderBy: { [dateField]: 'desc' },
       take: 20,
     }),
   ]);
   return {
     summary: {
       completedDeliveries,
-      lastDeliveredAt: deliveries[0]?.deliveredAt || null,
+      lastDeliveredAt: latestCompleted?.deliveredAt || null,
+      filteredDeliveries,
+    },
+    filters: {
+      status: filters.status,
+      query: filters.query,
+      from: filters.fromValue,
+      to: filters.toValue,
     },
     deliveries,
   };
@@ -628,7 +704,7 @@ async function handle(request, response) {
     return json(response, 200, await dashboard(driver.id));
   }
   if (request.method === 'GET' && url.pathname === '/api/deliveries/history') {
-    return json(response, 200, await deliveryHistory(driver.id));
+    return json(response, 200, await deliveryHistory(driver.id, url.searchParams));
   }
 
   const idempotentResponse = async (operation) => {

@@ -157,6 +157,35 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(history.body.deliveries[0].order.status, 'DELIVERED');
   assert.notEqual(history.body.deliveries[0].deliveredAt, null);
 
+  const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=BKC&from=2000-01-01&to=2999-12-31', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(matchingHistory.status, 200);
+  assert.equal(matchingHistory.body.summary.filteredDeliveries, 1);
+  assert.deepEqual(matchingHistory.body.filters, {
+    status: 'DELIVERED', query: 'BKC', from: '2000-01-01', to: '2999-12-31',
+  });
+
+  const emptyHistory = await request('/api/deliveries/history?query=存在しない配送先', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(emptyHistory.status, 200);
+  assert.equal(emptyHistory.body.summary.completedDeliveries, 1);
+  assert.equal(emptyHistory.body.summary.filteredDeliveries, 0);
+  assert.deepEqual(emptyHistory.body.deliveries, []);
+
+  const invalidHistory = await request('/api/deliveries/history?status=UNKNOWN', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(invalidHistory.status, 400);
+  assert.equal(invalidHistory.body.code, 'VALIDATION_ERROR');
+
+  const reversedDates = await request('/api/deliveries/history?from=2026-09-13&to=2026-09-12', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(reversedDates.status, 400);
+  assert.equal(reversedDates.body.code, 'VALIDATION_ERROR');
+
   const otherDriver = await request('/api/drivers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -168,6 +197,36 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(otherHistory.status, 200);
   assert.equal(otherHistory.body.summary.completedDeliveries, 0);
   assert.deepEqual(otherHistory.body.deliveries, []);
+});
+
+test('配達履歴を配送状態で絞り込める', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '履歴絞り込み配達員', pin: '135790' }),
+  });
+  const token = registration.body.accessToken;
+  const post = (pathname, key) => request(pathname, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key },
+  });
+  await post('/api/shifts/start', 'filter-start');
+  const offer = await post('/api/offers/current', 'filter-offer');
+  await post(`/api/offers/${offer.body.id}/accept`, 'filter-accept');
+
+  const assigned = await request('/api/deliveries/history?status=ASSIGNED', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(assigned.status, 200);
+  assert.equal(assigned.body.summary.filteredDeliveries, 1);
+  assert.equal(assigned.body.deliveries[0].order.status, 'ASSIGNED');
+
+  const delivered = await request('/api/deliveries/history?status=DELIVERED', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(delivered.status, 200);
+  assert.equal(delivered.body.summary.filteredDeliveries, 0);
+  assert.deepEqual(delivered.body.deliveries, []);
 });
 
 test('認証なしでは配達員用APIを利用できない', async () => {
