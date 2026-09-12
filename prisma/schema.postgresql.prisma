@@ -1,6 +1,11 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/client-v2"
+  output   = "../generated/client-postgresql"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model IdempotencyKey {
@@ -8,17 +13,11 @@ model IdempotencyKey {
   key        String
   endpoint   String
   driverId   Int
-
   response   String?
   statusCode Int?
   createdAt  DateTime @default(now())
 
   @@unique([key, endpoint, driverId])
-}
-
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Driver {
