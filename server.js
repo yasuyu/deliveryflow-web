@@ -361,6 +361,27 @@ async function dashboard(driverId) {
   };
 }
 
+async function deliveryHistory(driverId) {
+  const [completedDeliveries, deliveries] = await prisma.$transaction([
+    prisma.assignment.count({
+      where: { driverId, deliveredAt: { not: null } },
+    }),
+    prisma.assignment.findMany({
+      where: { driverId, deliveredAt: { not: null } },
+      include: { order: { include: { store: true } } },
+      orderBy: { deliveredAt: 'desc' },
+      take: 20,
+    }),
+  ]);
+  return {
+    summary: {
+      completedDeliveries,
+      lastDeliveredAt: deliveries[0]?.deliveredAt || null,
+    },
+    deliveries,
+  };
+}
+
 async function startShift(driver) {
   if (driver.status !== 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '退勤中のときだけ稼働開始できます');
@@ -605,6 +626,9 @@ async function handle(request, response) {
   const driver = await authenticateDriver(request);
   if (request.method === 'GET' && url.pathname === '/api/dashboard') {
     return json(response, 200, await dashboard(driver.id));
+  }
+  if (request.method === 'GET' && url.pathname === '/api/deliveries/history') {
+    return json(response, 200, await deliveryHistory(driver.id));
   }
 
   const idempotentResponse = async (operation) => {

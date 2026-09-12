@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.1.0
+  version: 0.2.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -46,6 +46,12 @@ paths:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
         '200': { description: 現在のダッシュボード状態 }
+  /api/deliveries/history:
+    get:
+      summary: ログイン中の配達員の完了実績を新しい順に最大20件取得する
+      responses:
+        '200': { description: 完了件数、最終配達時刻、配達履歴 }
+        '401': { description: Bearerトークンが不正 }
   /api/shifts/start:
     post:
       summary: 稼働を開始する OFFLINE to IDLE

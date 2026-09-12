@@ -146,6 +146,28 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(completed.status, 200);
   assert.equal(completed.body.driver.status, 'IDLE');
   assert.equal(completed.body.assignment, null);
+
+  const history = await request('/api/deliveries/history', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(history.status, 200);
+  assert.equal(history.body.summary.completedDeliveries, 1);
+  assert.notEqual(history.body.summary.lastDeliveredAt, null);
+  assert.equal(history.body.deliveries.length, 1);
+  assert.equal(history.body.deliveries[0].order.status, 'DELIVERED');
+  assert.notEqual(history.body.deliveries[0].deliveredAt, null);
+
+  const otherDriver = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '履歴分離確認配達員', pin: '246810' }),
+  });
+  const otherHistory = await request('/api/deliveries/history', {
+    headers: { Authorization: `Bearer ${otherDriver.body.accessToken}` },
+  });
+  assert.equal(otherHistory.status, 200);
+  assert.equal(otherHistory.body.summary.completedDeliveries, 0);
+  assert.deepEqual(otherHistory.body.deliveries, []);
 });
 
 test('認証なしでは配達員用APIを利用できない', async () => {
