@@ -6,14 +6,35 @@ const statusText = {
 };
 
 const message = document.querySelector('#message');
+const registrationMessage = document.querySelector('#registrationMessage');
 const actions = document.querySelector('#actions');
 const detail = document.querySelector('#deliveryDetail');
 const card = document.querySelector('#deliveryCard');
 const registrationCard = document.querySelector('#registrationCard');
 const registrationForm = document.querySelector('#registrationForm');
+const loginForm = document.querySelector('#loginForm');
 const workflow = document.querySelector('#workflow');
-let driverToken = localStorage.getItem('deliveryFlowDriverId');
+let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
+let isLoading = false;
+
+function setMessage(text, kind = 'info') {
+  message.textContent = text;
+  message.className = `message message--${kind}`;
+}
+
+function setRegistrationMessage(text = '') {
+  registrationMessage.textContent = text;
+  registrationMessage.classList.toggle('hidden', !text);
+}
+
+function setLoading(loading) {
+  isLoading = loading;
+  document.querySelectorAll('button').forEach((element) => {
+    element.disabled = loading || element.dataset.alwaysDisabled === 'true';
+  });
+  actions.setAttribute('aria-busy', String(loading));
+}
 
 async function request(url) {
   const idempotencyKey = crypto.randomUUID();
@@ -28,7 +49,7 @@ async function request(url) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await fetch(url, options);
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
       return data;
     } catch (error) {
@@ -37,8 +58,9 @@ async function request(url) {
   }
 }
 
-function button(label, action) {
-  return `<button data-action="${action}">${label}</button>`;
+function button(label, action, alwaysDisabled = false) {
+  const disabled = isLoading || alwaysDisabled;
+  return `<button data-action="${action}" data-always-disabled="${alwaysDisabled}"${disabled ? ' disabled' : ''}>${label}</button>`;
 }
 
 function formatJapanTime(value) {
@@ -63,6 +85,7 @@ function showOrder(order, extraLabel, extraValue) {
 function render() {
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
   document.querySelector('#driverName').textContent = state.driver.name;
+  document.querySelector('#driverId').textContent = `配達員ID: ${state.driver.id}`;
   document.querySelector('#shiftStartedAt').textContent = state.driver.shiftStartedAt
     ? `稼働開始: ${formatJapanTime(state.driver.shiftStartedAt)}`
     : '現在は退勤中です';
@@ -96,63 +119,142 @@ function render() {
       actions.innerHTML = button('配達を完了する', `complete:${state.assignment.id}`);
     }
   }
+
+  actions.innerHTML += button(
+    state.driver.status === 'OFFLINE' ? 'この端末からログアウトする' : 'ログアウトするには先に退勤してください',
+    'logout',
+    state.driver.status !== 'OFFLINE',
+  );
+
+  if (!isLoading) {
+    const guidance = {
+      OFFLINE: '稼働を開始すると、新しいオファーを確認できます。',
+      IDLE: 'オファーを確認するか、退勤を選んでください。',
+      OFFERED: '内容と期限を確認して、受諾または辞退を選んでください。',
+      BUSY: state.assignment?.pickedUpAt
+        ? '配達先に到着したら、配達完了を記録してください。'
+        : '店舗で荷物を受け取ったら、受取を記録してください。',
+    };
+    setMessage(guidance[state.driver.status]);
+  }
 }
 
-async function refresh() {
+async function refresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
+    loginForm.elements.driverId.value = localStorage.getItem('deliveryFlowDriverId') || '';
     registrationCard.classList.remove('hidden');
     workflow.classList.add('hidden');
     return;
   }
-  const response = await fetch('/api/dashboard', {
-    headers: { Authorization: `Bearer ${driverToken}` },
-  });
-  if (response.status === 401) {
-    localStorage.removeItem('deliveryFlowDriverId');
-    driverToken = null;
-    return refresh();
+  try {
+    const response = await fetch('/api/dashboard', {
+      headers: { Authorization: `Bearer ${driverToken}` },
+    });
+    if (response.status === 401) {
+      localStorage.removeItem('deliveryFlowAccessToken');
+      driverToken = null;
+      return refresh();
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
+    state = data;
+    registrationCard.classList.add('hidden');
+    workflow.classList.remove('hidden');
+    render();
+    if (!preserveMessage) setMessage('最新の配達状況を表示しています。', 'success');
+  } catch (error) {
+    setMessage(`読み込みに失敗しました。${error.message}`, 'error');
   }
-  state = await response.json();
-  registrationCard.classList.add('hidden');
-  workflow.classList.remove('hidden');
-  render();
-  message.textContent = '資料に定義された順序で操作してください。';
 }
 
 registrationForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const { name } = Object.fromEntries(new FormData(registrationForm));
-  const response = await fetch('/api/drivers', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  const driver = await response.json();
-  if (!response.ok) {
-    alert(driver.message);
-    return;
+  const { name, pin } = Object.fromEntries(new FormData(registrationForm));
+  setRegistrationMessage('配達員を登録しています。');
+  setLoading(true);
+  try {
+    const response = await fetch('/api/drivers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, pin }),
+    });
+    const registration = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(registration.message || '配達員を登録できませんでした。');
+    driverToken = registration.accessToken;
+    localStorage.setItem('deliveryFlowAccessToken', driverToken);
+    localStorage.setItem('deliveryFlowDriverId', String(registration.driver.id));
+    setRegistrationMessage();
+    await refresh({ preserveMessage: true });
+    setMessage(`登録しました。あなたの配達員IDは ${registration.driver.id} です。`, 'success');
+  } catch (error) {
+    setRegistrationMessage(`登録に失敗しました。${error.message}`);
+  } finally {
+    setLoading(false);
   }
-  driverToken = String(driver.id);
-  localStorage.setItem('deliveryFlowDriverId', driverToken);
-  await refresh();
+});
+
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { driverId, pin } = Object.fromEntries(new FormData(loginForm));
+  setRegistrationMessage('ログインしています。');
+  setLoading(true);
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ driverId: Number(driverId), pin }),
+    });
+    const login = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(login.message || 'ログインできませんでした。');
+    driverToken = login.accessToken;
+    localStorage.setItem('deliveryFlowAccessToken', driverToken);
+    localStorage.setItem('deliveryFlowDriverId', String(login.driver.id));
+    setRegistrationMessage();
+    await refresh({ preserveMessage: true });
+    setMessage('ログインしました。', 'success');
+  } catch (error) {
+    setRegistrationMessage(`ログインに失敗しました。${error.message}`);
+  } finally {
+    setLoading(false);
+  }
 });
 
 actions.addEventListener('click', async (event) => {
   const action = event.target.dataset.action;
-  if (!action) return;
+  if (!action || isLoading) return;
+  const actionLabels = {
+    start: '稼働を開始', end: '退勤', offer: 'オファーの確認',
+    accept: 'オファーの受諾', reject: 'オファーの辞退',
+    pickup: '荷物の受取', complete: '配達の完了', logout: 'ログアウト',
+  };
+  const actionName = actionLabels[action.split(':')[0]];
+  setLoading(true);
+  setMessage(`${actionName}を処理しています。`, 'loading');
   try {
     if (action === 'start') await request('/api/shifts/start');
     if (action === 'end') await request('/api/shifts/end');
     if (action === 'offer') await request('/api/offers/current');
+    if (action === 'logout') {
+      await request('/api/logout');
+      localStorage.removeItem('deliveryFlowAccessToken');
+      driverToken = null;
+      await refresh();
+      return;
+    }
     if (action.startsWith('accept:')) await request(`/api/offers/${action.split(':')[1]}/accept`);
     if (action.startsWith('reject:')) await request(`/api/offers/${action.split(':')[1]}/reject`);
     if (action.startsWith('pickup:')) await request(`/api/assignments/${action.split(':')[1]}/pickup`);
     if (action.startsWith('complete:')) await request(`/api/assignments/${action.split(':')[1]}/complete`);
-    await refresh();
+    await refresh({ preserveMessage: true });
+    setMessage(`${actionName}が完了しました。`, 'success');
   } catch (error) {
-    message.textContent = error.message;
+    setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
+  } finally {
+    setLoading(false);
   }
 });
 
 refresh();
-setInterval(refresh, 10_000);
+setInterval(() => {
+  if (!isLoading) refresh();
+}, 10_000);

@@ -1,13 +1,42 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { PrismaClient } = require('./generated/client-v2');
+const { createHash, randomBytes, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
+const { promisify } = require('util');
 
-process.env.DATABASE_URL = 'file:./delivery.db';
+const maximumJsonBodyBytes = 1_000_000;
+const scrypt = promisify(scryptCallback);
+const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
+const maximumLoginFailures = 5;
+const loginFailures = new Map();
+
+const databaseProvider = process.env.DATABASE_PROVIDER || 'sqlite';
+if (!['sqlite', 'postgresql'].includes(databaseProvider)) {
+  throw new Error('DATABASE_PROVIDER must be sqlite or postgresql');
+}
+const prismaClientPath = databaseProvider === 'postgresql'
+  ? './generated/client-postgresql'
+  : './generated/client-v2';
+const { PrismaClient } = require(prismaClientPath);
+
+function positiveIntegerFromEnv(name, defaultValue) {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || rawValue === '') return defaultValue;
+
+  const value = Number(rawValue);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL must be set. Copy .env.example to .env first.');
+}
 
 const prisma = new PrismaClient();
-const port = Number(process.env.PORT || 3000);
-const offerTtlMilliseconds = 2 * 60 * 1000;
+const port = positiveIntegerFromEnv('PORT', 3000);
+const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 120) * 1000;
 
 class ApiError extends Error {
   constructor(status, code, message) {
@@ -18,15 +47,103 @@ class ApiError extends Error {
 }
 
 function json(response, status, body) {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  response.writeHead(status, {
+    ...securityHeaders(),
+    'Content-Type': 'application/json; charset=utf-8',
+  });
   response.end(JSON.stringify(body));
+}
+
+function securityHeaders() {
+  return {
+    'Content-Security-Policy': "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  };
+}
+
+function publicDriver(driver) {
+  const { accessTokenHash, pinHash, ...safeDriver } = driver;
+  return safeDriver;
+}
+
+function validatePin(pin) {
+  if (!/^\d{6}$/.test(pin || '')) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'PINは6桁の数字で入力してください');
+  }
+}
+
+async function hashPin(pin) {
+  const salt = randomBytes(16);
+  const derivedKey = await scrypt(pin, salt, 64);
+  return `${salt.toString('hex')}:${derivedKey.toString('hex')}`;
+}
+
+async function verifyPin(pin, storedHash) {
+  if (!storedHash) return false;
+  const [saltHex, keyHex] = storedHash.split(':');
+  if (!saltHex || !keyHex) return false;
+  const expectedKey = Buffer.from(keyHex, 'hex');
+  const actualKey = await scrypt(pin, Buffer.from(saltHex, 'hex'), expectedKey.length);
+  return actualKey.length === expectedKey.length && timingSafeEqual(actualKey, expectedKey);
+}
+
+function issueAccessToken() {
+  const accessToken = randomBytes(32).toString('base64url');
+  return {
+    accessToken,
+    accessTokenHash: createHash('sha256').update(accessToken).digest('hex'),
+  };
+}
+
+function loginFailureKey(request, driverId) {
+  return `${request.socket.remoteAddress || 'unknown'}:${driverId}`;
+}
+
+function activeLoginFailures(key) {
+  const cutoff = Date.now() - loginAttemptWindowMilliseconds;
+  const failures = (loginFailures.get(key) || []).filter((timestamp) => timestamp > cutoff);
+  if (failures.length) loginFailures.set(key, failures);
+  else loginFailures.delete(key);
+  return failures;
+}
+
+function ensureLoginAttemptAllowed(key) {
+  if (activeLoginFailures(key).length >= maximumLoginFailures) {
+    throw new ApiError(429, 'TOO_MANY_LOGIN_ATTEMPTS', 'ログイン失敗が続いたため、15分後にもう一度お試しください');
+  }
+}
+
+function recordLoginFailure(key) {
+  loginFailures.set(key, [...activeLoginFailures(key), Date.now()]);
 }
 
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
+    const contentLength = Number(request.headers['content-length'] || 0);
+    if (contentLength > maximumJsonBodyBytes) {
+      reject(new ApiError(413, 'PAYLOAD_TOO_LARGE', 'JSON本文は1MB以下にしてください'));
+      request.resume();
+      return;
+    }
     let body = '';
-    request.on('data', (chunk) => { body += chunk; });
+    let receivedBytes = 0;
+    let tooLarge = false;
+    request.on('data', (chunk) => {
+      receivedBytes += chunk.length;
+      if (receivedBytes > maximumJsonBodyBytes) {
+        tooLarge = true;
+        return;
+      }
+      body += chunk;
+    });
     request.on('end', () => {
+      if (tooLarge) {
+        reject(new ApiError(413, 'PAYLOAD_TOO_LARGE', 'JSON本文は1MB以下にしてください'));
+        return;
+      }
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch {
@@ -42,7 +159,7 @@ function serveFile(response, fileName, contentType) {
       json(response, 404, { code: 'NOT_FOUND', message: 'ファイルが見つかりません' });
       return;
     }
-    response.writeHead(200, { 'Content-Type': contentType });
+    response.writeHead(200, { ...securityHeaders(), 'Content-Type': contentType });
     response.end(content);
   });
 }
@@ -53,11 +170,12 @@ async function currentDriver(client = prisma) {
 
 async function authenticateDriver(request) {
   const authorization = request.headers.authorization || '';
-  const match = authorization.match(/^Bearer (\d+)$/);
+  const match = authorization.match(/^Bearer ([A-Za-z0-9_-]{43})$/);
   if (!match) {
     throw new ApiError(401, 'UNAUTHORIZED', 'AuthorizationヘッダーにBearerトークンが必要です');
   }
-  const driver = await prisma.driver.findUnique({ where: { id: Number(match[1]) } });
+  const accessTokenHash = createHash('sha256').update(match[1]).digest('hex');
+  const driver = await prisma.driver.findUnique({ where: { accessTokenHash } });
   if (!driver) throw new ApiError(401, 'UNAUTHORIZED', '配達員が見つかりません');
   return driver;
 }
@@ -199,7 +317,7 @@ async function dashboard(driverId) {
     include: { order: { include: { store: true } } },
   });
   return {
-    driver: await prisma.driver.findUnique({ where: { id: driverId } }),
+    driver: publicDriver(await prisma.driver.findUnique({ where: { id: driverId } })),
     offer,
     assignment,
   };
@@ -214,7 +332,7 @@ async function startShift(driver) {
     data: { status: 'IDLE', shiftStartedAt: new Date() },
   });
   await createNextOffer(updated);
-  return updated;
+  return publicDriver(updated);
 }
 
 async function endShift(driver) {
@@ -242,7 +360,7 @@ async function endShift(driver) {
   for (const offer of pendingOffers) {
     await restoreOrderWhenCandidatesAreGone(offer.orderId);
   }
-  return prisma.driver.findUnique({ where: { id: driver.id } });
+  return publicDriver(await prisma.driver.findUnique({ where: { id: driver.id } }));
 }
 
 async function showCurrentOffer(driver) {
@@ -380,6 +498,16 @@ async function completeAssignment(driver, assignmentId) {
   await createNextOffer(driver);
 }
 
+async function logoutDriver(driver) {
+  if (driver.status !== 'OFFLINE') {
+    throw new ApiError(409, 'INVALID_STATE_TRANSITION', '勤務中はログアウトできません。退勤してからログアウトしてください');
+  }
+  await prisma.driver.update({
+    where: { id: driver.id },
+    data: { accessTokenHash: null },
+  });
+}
+
 async function handle(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
@@ -390,12 +518,42 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, 'style.css', 'text/css; charset=utf-8');
 
   if (request.method === 'POST' && url.pathname === '/api/drivers') {
-    const { name } = await readJsonBody(request);
+    const { name, pin } = await readJsonBody(request);
     if (!name || !name.trim()) {
       throw new ApiError(400, 'VALIDATION_ERROR', '配達員名を入力してください');
     }
-    const newDriver = await prisma.driver.create({ data: { name: name.trim() } });
-    return json(response, 201, newDriver);
+    validatePin(pin);
+    const { accessToken, accessTokenHash } = issueAccessToken();
+    const newDriver = await prisma.driver.create({
+      data: {
+        name: name.trim(),
+        accessTokenHash,
+        pinHash: await hashPin(pin),
+      },
+    });
+    return json(response, 201, { driver: publicDriver(newDriver), accessToken });
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/login') {
+    const { driverId, pin } = await readJsonBody(request);
+    const numericDriverId = Number(driverId);
+    if (!Number.isInteger(numericDriverId) || numericDriverId <= 0 || !/^\d{6}$/.test(pin || '')) {
+      throw new ApiError(401, 'INVALID_CREDENTIALS', '配達員IDまたはPINが正しくありません');
+    }
+    const failureKey = loginFailureKey(request, numericDriverId);
+    ensureLoginAttemptAllowed(failureKey);
+    const loginDriver = await prisma.driver.findUnique({ where: { id: numericDriverId } });
+    if (!loginDriver || !(await verifyPin(pin, loginDriver.pinHash))) {
+      recordLoginFailure(failureKey);
+      throw new ApiError(401, 'INVALID_CREDENTIALS', '配達員IDまたはPINが正しくありません');
+    }
+    loginFailures.delete(failureKey);
+    const { accessToken, accessTokenHash } = issueAccessToken();
+    const updatedDriver = await prisma.driver.update({
+      where: { id: loginDriver.id },
+      data: { accessTokenHash },
+    });
+    return json(response, 200, { driver: publicDriver(updatedDriver), accessToken });
   }
 
   const driver = await authenticateDriver(request);
@@ -416,6 +574,12 @@ async function handle(request, response) {
   }
   if (request.method === 'POST' && url.pathname === '/api/offers/current') {
     return idempotentResponse(() => showCurrentOffer(driver));
+  }
+  if (request.method === 'POST' && url.pathname === '/api/logout') {
+    return idempotentResponse(async () => {
+      await logoutDriver(driver);
+      return { message: 'ログアウトしました' };
+    });
   }
 
   const accept = url.pathname.match(/^\/api\/offers\/(\d+)\/accept$/);

@@ -8,7 +8,7 @@ security:
 paths:
   /api/drivers:
     post:
-      summary: 配達員を登録して識別用IDを発行する
+      summary: 配達員を登録してアクセス用トークンを発行する
       security: []
       requestBody:
         required: true
@@ -16,12 +16,31 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [name, pin]
               properties:
                 name: { type: string, example: 山田太郎 }
+                pin: { type: string, pattern: '^[0-9]{6}$', example: '123456' }
       responses:
-        '201': { description: 配達員登録成功 }
+        '201': { description: 配達員と、この応答で一度だけ受け取るアクセス用トークンを返す }
         '400': { description: 入力値が不正 }
+  /api/login:
+    post:
+      summary: 配達員IDとPINでログインし、新しいアクセストークンを発行する
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [driverId, pin]
+              properties:
+                driverId: { type: integer, example: 2 }
+                pin: { type: string, pattern: '^[0-9]{6}$', example: '123456' }
+      responses:
+        '200': { description: ログイン成功 }
+        '401': { description: 配達員IDまたはPINが不正 }
+        '429': { description: 短時間にログイン失敗が続いたため一時的に拒否 }
   /api/dashboard:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
@@ -52,6 +71,14 @@ paths:
       responses:
         '200': { description: オファー確認成功 }
         '404': { description: オファーなし }
+  /api/logout:
+    post:
+      summary: 現在のアクセストークンを失効してログアウトする
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: ログアウト成功。以後、同じトークンは利用不可 }
+        '409': { description: OFFLINEではないためログアウト不可 }
   /api/offers/{offerId}/accept:
     post:
       summary: オファーを受諾する
@@ -113,7 +140,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: POST /api/driversで発行された配達員IDを指定する学習用の仮認証
+      description: POST /api/driversで発行された推測困難なアクセス用トークンを指定する。DBにはトークン本体ではなくSHA-256ハッシュだけを保存する。
   schemas:
     Error:
       type: object

@@ -2,12 +2,17 @@
   "name": "rideflow-web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "start": "node server.js",
+    "start": "node --env-file=.env server.js",
     "check": "node --check server.js && node --check public/app.js",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "test": "node --test",
+    "test:postgresql-smoke": "node scripts/postgresql-smoke.js",
+    "db:generate": "node --env-file=.env node_modules/prisma/build/index.js generate",
+    "db:migrate": "node --env-file=.env node_modules/prisma/build/index.js migrate dev",
+    "db:studio": "node --env-file=.env node_modules/prisma/build/index.js studio"
   },
   "dependencies": {
     "@prisma/client": "^6.19.1"

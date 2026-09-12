@@ -6,10 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  sqlite-tests:
+    name: SQLite tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
+      DATABASE_PROVIDER: sqlite
       DATABASE_URL: file:./ci.db
     steps:
       - name: Checkout repository
@@ -18,20 +28,53 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Prisma Client
-        run: npm run db:generate
+      - name: Generate SQLite Prisma Client
+        run: node node_modules/prisma/build/index.js generate
 
-      - name: Rebuild database from migrations
-        run: npx prisma migrate deploy
+      - name: Apply SQLite migrations to an empty database
+        run: node node_modules/prisma/build/index.js migrate deploy
 
       - name: Check JavaScript syntax
         run: npm run check
 
-      - name: Validate source files
-        run: npm run check
+      - name: Run API tests
+        run: npm test
+
+  postgresql-smoke-test:
+    name: PostgreSQL container smoke test
+    needs: sqlite-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate Compose configuration
+        run: docker compose --env-file .env.postgres.example config --quiet
+
+      - name: Build and start PostgreSQL stack
+        run: docker compose --env-file .env.postgres.example up --build -d --wait
+
+      - name: Verify the running PostgreSQL API
+        env:
+          BASE_URL: http://127.0.0.1:3106
+        run: npm run test:postgresql-smoke
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose --env-file .env.postgres.example logs --no-color
+
+      - name: Stop containers
+        if: always()
+        run: docker compose --env-file .env.postgres.example down -v

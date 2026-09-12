@@ -15,22 +15,32 @@
     <section id="registrationCard" class="card hidden">
       <p class="eyebrow">POST /api/drivers</p>
       <h2>配達員を登録</h2>
-      <p>登録後に発行されるIDを、BearerトークンとしてAPIへ送ります。</p>
+      <p>名前と6桁のPINを登録すると、安全なアクセストークンが発行されます。</p>
       <form id="registrationForm">
         <label>配達員名<input name="name" placeholder="例: 山田 太郎" required></label>
+        <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" placeholder="6桁の数字" required></label>
         <button type="submit">登録して始める</button>
       </form>
+      <hr>
+      <p class="eyebrow">POST /api/login</p>
+      <h2>登録済みの配達員としてログイン</h2>
+      <form id="loginForm">
+        <label>配達員ID<input name="driverId" type="number" min="1" inputmode="numeric" autocomplete="username" required></label>
+        <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="current-password" required></label>
+        <button type="submit">ログイン</button>
+      </form>
+      <p id="registrationMessage" class="message hidden" role="alert" aria-live="assertive"></p>
     </section>
 
     <div id="workflow" class="hidden">
       <section class="hero">
         <div><p class="eyebrow">DELIVERY LIFECYCLE</p><h2>正しい状態遷移で、<br>配達を完了する。</h2><p>元資料の状態遷移をブラウザ上で追える最小構成です。</p></div>
-        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="shiftStartedAt"></small></aside>
+        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small></aside>
       </section>
       <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
-      <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message">読み込み中です。</p><div id="actions"></div></section>
+      <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
       <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>配達詳細</h2><div id="deliveryDetail"></div></section>
-      <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する許可証です。この学習版では配達員IDを使います。実サービスでは推測できない安全なトークンを使用します。</p></section>
+      <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する、推測困難な許可証です。ログイン時に発行され、ログアウトすると無効になります。</p></section>
     </div>
   </main>
   <script src="/app.js"></script>
