@@ -154,6 +154,21 @@ test('認証なしでは配達員用APIを利用できない', async () => {
   assert.equal(response.body.code, 'UNAUTHORIZED');
 });
 
+test('監視用エンドポイントはDB接続状況と安全なメトリクスを返す', async () => {
+  const health = await request('/healthz');
+  assert.equal(health.status, 200);
+  assert.deepEqual(health.body, { status: 'ok', database: 'connected' });
+
+  const metrics = await request('/metrics');
+  assert.equal(metrics.status, 200);
+  assert.equal(metrics.body.status, 'ok');
+  assert.equal(typeof metrics.body.requests, 'number');
+  assert.equal(typeof metrics.body.averageResponseMilliseconds, 'number');
+
+  const requestIdResponse = await fetch(`${baseUrl}/healthz`);
+  assert.match(requestIdResponse.headers.get('x-request-id'), /^[0-9a-f-]{36}$/);
+});
+
 test('配達員IDでは認証できず、安全な応答ヘッダーを返す', async () => {
   const response = await fetch(`${baseUrl}/api/dashboard`, {
     headers: { Authorization: 'Bearer 1' },

@@ -138,6 +138,28 @@ DBにはトークンそのものを保存せず、SHA-256で変換したハッ�
 
 すべての応答には、画面の埋め込みや意図しないスクリプト実行を抑制するセキュリティヘッダーを追加しています。また、JSON本文は1MBまでに制限し、大きすぎる入力には `413 PAYLOAD_TOO_LARGE` を返します。これは学習用の基本対策であり、実サービスではHTTPS、短い有効期限、ログアウト時の失効、権限管理も追加します。
 
+## ログ・監視・負荷試験
+
+サーバーは各HTTPリクエストの時刻、リクエストID、メソッド、パス、状態コード、処理時間をJSON形式で標準出力へ記録します。認証ヘッダー、クエリ文字列、PIN、アクセストークンはログへ記録しません。
+
+- `GET /healthz`: アプリとデータベースに接続できるかを確認します。成功時は `{"status":"ok","database":"connected"}` を返します。
+- `GET /metrics`: 起動からのリクエスト数、5xxエラー数、平均応答時間、稼働秒数を返します。ローカル学習用の簡易メトリクスです。
+
+起動中のアプリに対して、標準機能だけで負荷試験できます。既定ではローカルの `/healthz` に100件を同時10件で送るため、外部サイトには送信できません。
+
+```powershell
+npm run load-test
+```
+
+件数と同時実行数を変える例です。
+
+```powershell
+$env:LOAD_TEST_REQUESTS = 500
+$env:LOAD_TEST_CONCURRENCY = 25
+npm run load-test
+Remove-Item Env:LOAD_TEST_REQUESTS, Env:LOAD_TEST_CONCURRENCY
+```
+
 ## 最初に読むファイル
 
 - `public/index.html`: 画面の構造
