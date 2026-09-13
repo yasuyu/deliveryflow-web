@@ -23,6 +23,9 @@ const historyResultCount = document.querySelector('#historyResultCount');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const scoreEvents = document.querySelector('#scoreEvents');
+const currentTitle = document.querySelector('#currentTitle');
+const nextTitle = document.querySelector('#nextTitle');
+const titleProgress = document.querySelector('#titleProgress');
 const currentRankingList = document.querySelector('#currentRanking');
 const lifetimeRankingList = document.querySelector('#lifetimeRanking');
 const currentRankingMe = document.querySelector('#currentRankingMe');
@@ -30,7 +33,13 @@ const lifetimeRankingMe = document.querySelector('#lifetimeRankingMe');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
-let scoreState = { currentScore: 0, lifetimeScore: 0, windowDays: 14, recentEvents: [] };
+let scoreState = {
+  currentScore: 0,
+  lifetimeScore: 0,
+  windowDays: 14,
+  title: { current: { name: 'ルーキー' }, next: null, progressPercent: 0 },
+  recentEvents: [],
+};
 let rankingState = { current: { leaders: [], me: null }, lifetime: { leaders: [], me: null } };
 let isLoading = false;
 
@@ -102,6 +111,11 @@ function showOrder(order, extraLabel, extraValue, estimatedPoints = null) {
 function renderScore() {
   currentScore.textContent = String(scoreState.currentScore);
   lifetimeScore.textContent = String(scoreState.lifetimeScore);
+  currentTitle.textContent = scoreState.title.current.name;
+  titleProgress.value = scoreState.title.progressPercent;
+  nextTitle.textContent = scoreState.title.next
+    ? `次の「${scoreState.title.next.name}」まで、あと${scoreState.title.next.pointsNeeded}ポイント`
+    : '最高ランクに到達しました。';
   scoreEvents.replaceChildren();
   if (!scoreState.recentEvents.length) {
     const item = document.createElement('li');

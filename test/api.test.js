@@ -16,6 +16,7 @@ const databasePath = path.join(projectRoot, 'prisma', databaseName);
 let serverProcess;
 let baseUrl;
 let accessToken;
+let primaryDriverId;
 
 async function createTestDatabase() {
   const prismaDirectory = path.join(projectRoot, 'prisma');
@@ -105,6 +106,7 @@ before(async () => {
   assert.equal(registration.body.driver.pinHash, undefined);
   assert.match(registration.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
   accessToken = registration.body.accessToken;
+  primaryDriverId = registration.body.driver.id;
 });
 
 after(async () => {
@@ -252,6 +254,26 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(otherRanking.status, 200);
   assert.equal(otherRanking.body.current.me.rank, 2);
   assert.equal(otherRanking.body.current.me.isCurrentDriver, true);
+
+  const titleCases = [
+    { score: 499, current: 'ルーキー', next: 'ブロンズ', pointsNeeded: 1, progressPercent: 99 },
+    { score: 500, current: 'ブロンズ', next: 'シルバー', pointsNeeded: 1000, progressPercent: 0 },
+    { score: 2999, current: 'シルバー', next: 'ゴールド', pointsNeeded: 1, progressPercent: 99 },
+    { score: 3000, current: 'ゴールド', next: null, pointsNeeded: null, progressPercent: 100 },
+  ];
+  const database = new DatabaseSync(databasePath);
+  for (const titleCase of titleCases) {
+    database.prepare('UPDATE Driver SET score = ? WHERE id = ?').run(titleCase.score, primaryDriverId);
+    const titledScore = await request('/api/drivers/me/score', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(titledScore.body.title.current.name, titleCase.current);
+    assert.equal(titledScore.body.title.next?.name || null, titleCase.next);
+    assert.equal(titledScore.body.title.next?.pointsNeeded || null, titleCase.pointsNeeded);
+    assert.equal(titledScore.body.title.progressPercent, titleCase.progressPercent);
+  }
+  database.prepare('UPDATE Driver SET score = 100 WHERE id = ?').run(primaryDriverId);
+  database.close();
 });
 
 test('配達履歴を配送状態で絞り込める', async () => {

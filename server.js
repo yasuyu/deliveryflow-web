@@ -10,6 +10,12 @@ const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const scoreWindowDays = 14;
 const rankingLimit = 10;
+const driverTitles = [
+  { code: 'ROOKIE', name: 'ルーキー', minimumScore: 0 },
+  { code: 'BRONZE', name: 'ブロンズ', minimumScore: 500 },
+  { code: 'SILVER', name: 'シルバー', minimumScore: 1500 },
+  { code: 'GOLD', name: 'ゴールド', minimumScore: 3000 },
+];
 const completedDeliveryScoreCode = 'DELIVERY_COMPLETED';
 const loginFailures = new Map();
 const startedAt = Date.now();
@@ -377,6 +383,24 @@ async function dashboard(driverId) {
   };
 }
 
+function buildDriverTitle(lifetimeScore) {
+  const currentIndex = Math.max(
+    0,
+    driverTitles.findLastIndex((title) => lifetimeScore >= title.minimumScore),
+  );
+  const current = driverTitles[currentIndex];
+  const nextTitle = driverTitles[currentIndex + 1] || null;
+  if (!nextTitle) return { current, next: null, progressPercent: 100 };
+
+  const scoreWithinLevel = lifetimeScore - current.minimumScore;
+  const levelRange = nextTitle.minimumScore - current.minimumScore;
+  return {
+    current,
+    next: { ...nextTitle, pointsNeeded: nextTitle.minimumScore - lifetimeScore },
+    progressPercent: Math.max(0, Math.floor((scoreWithinLevel / levelRange) * 100)),
+  };
+}
+
 async function driverScore(driverId) {
   const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
   const [driver, currentScore, recentEvents] = await prisma.$transaction([
@@ -398,6 +422,7 @@ async function driverScore(driverId) {
     currentScore: currentScore._sum.points || 0,
     lifetimeScore: driver.score,
     windowDays: scoreWindowDays,
+    title: buildDriverTitle(driver.score),
     recentEvents,
   };
 }

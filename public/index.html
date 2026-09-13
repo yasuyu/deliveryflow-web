@@ -43,6 +43,11 @@
       <section class="card score-card">
         <p class="eyebrow">DRIVER SCORE</p><h2>配達スコア</h2>
         <div class="score-summary"><p><span>現在のスコア</span><strong id="currentScore">0</strong><small>直近14日</small></p><p><span>生涯スコア</span><strong id="lifetimeScore">0</strong><small>すべての配達</small></p></div>
+        <div class="title-summary">
+          <p><span>現在の称号</span><strong id="currentTitle">ルーキー</strong></p>
+          <p id="nextTitle">次の称号を読み込み中です。</p>
+          <progress id="titleProgress" max="100" value="0" aria-label="次の称号までの進捗"></progress>
+        </div>
         <h3>最近の加点</h3><ol id="scoreEvents" class="score-events"></ol>
       </section>
       <section class="card ranking-card">
