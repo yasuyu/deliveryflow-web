@@ -85,5 +85,6 @@ Suggested branch: `feature/driver-ranking`
 ## Reference materials
 
 - Product and hackathon reference materials are kept outside this repository.
+- On a configured local machine, their locations are stored in the Git-ignored `data/codex-local-context.md`.
 - Relevant documents, screenshots, and notes may be consulted only when needed and explicitly made available by the user.
 - Treat all reference materials as read-only and do not expose personal filesystem paths.
