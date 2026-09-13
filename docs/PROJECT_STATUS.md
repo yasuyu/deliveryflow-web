@@ -1,6 +1,8 @@
 # DeliveryFlow Web project status
 
-Last updated: 2026-09-13
+Last reviewed: 2026-09-13
+
+This file is a navigation aid. The current code, migrations, OpenAPI document, and automated tests are the source of truth when this summary differs from the implementation.
 
 ## Current direction
 
@@ -38,15 +40,14 @@ Last updated: 2026-09-13
 - Prisma Studio startup helpers
 - OpenAPI documentation
 - GitHub Actions CI
-- Structured logs, health checks, readiness checks, and safe metrics
+- Structured logs, health checks, and safe metrics
 - Load-test script and PostgreSQL container smoke test
 - Compose Watch support
 
-## Merged pull requests
+## Recent relevant pull requests
 
 - PR #4: delivery history search and filtering
 - PR #5: driver score tracking and UI
-- Current known `main` merge commit after PR #5: `1ab71c54afa1303f012f1547aa8ff2e68749f043`
 
 ## Partially implemented
 
@@ -78,12 +79,11 @@ Suggested branch: `feature/driver-ranking`
 ## Verification baseline
 
 - PR #5 CI completed successfully.
-- CI covered SQLite tests and the PostgreSQL container smoke test.
-- Post-merge `npm run check` succeeded.
-- Post-merge `npm test` succeeded with 11 passing tests.
+- CI covered the SQLite test suite and PostgreSQL container smoke test.
+- Post-merge syntax checks and automated tests succeeded.
 
 ## Reference materials
 
-- Read-only source folder: `C:\Users\yayu0\OneDrive - 学校法人立命館\インターン\Lineヤフー`
-- Primary product reference: `ハッカソン.docx`
-- Supporting screenshots and notes in the same folder may be consulted only when relevant to the task.
+- Product and hackathon reference materials are kept outside this repository.
+- Relevant documents, screenshots, and notes may be consulted only when needed and explicitly made available by the user.
+- Treat all reference materials as read-only and do not expose personal filesystem paths.
