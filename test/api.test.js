@@ -223,6 +223,35 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(otherScore.body.currentScore, 0);
   assert.equal(otherScore.body.lifetimeScore, 0);
   assert.deepEqual(otherScore.body.recentEvents, []);
+
+  const tiedDriver = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '同点確認配達員', pin: '112233' }),
+  });
+  const ranking = await request('/api/drivers/ranking', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(ranking.status, 200);
+  assert.equal(ranking.body.windowDays, 14);
+  assert.equal(ranking.body.limit, 10);
+  assert.equal(ranking.body.tiePolicy, 'competition');
+  assert.deepEqual(ranking.body.current.leaders.map(({ name, score, rank }) => ({ name, score, rank })), [
+    { name: 'テスト配達員', score: 100, rank: 1 },
+    { name: '山田 配達員', score: 0, rank: 2 },
+    { name: '履歴分離確認配達員', score: 0, rank: 2 },
+    { name: '同点確認配達員', score: 0, rank: 2 },
+  ]);
+  assert.equal(ranking.body.current.me.rank, 1);
+  assert.equal(ranking.body.current.me.isCurrentDriver, true);
+  assert.equal(ranking.body.lifetime.me.score, 100);
+
+  const otherRanking = await request('/api/drivers/ranking', {
+    headers: { Authorization: `Bearer ${tiedDriver.body.accessToken}` },
+  });
+  assert.equal(otherRanking.status, 200);
+  assert.equal(otherRanking.body.current.me.rank, 2);
+  assert.equal(otherRanking.body.current.me.isCurrentDriver, true);
 });
 
 test('配達履歴を配送状態で絞り込める', async () => {
@@ -259,6 +288,10 @@ test('認証なしでは配達員用APIを利用できない', async () => {
   const response = await request('/api/dashboard');
   assert.equal(response.status, 401);
   assert.equal(response.body.code, 'UNAUTHORIZED');
+
+  const ranking = await request('/api/drivers/ranking');
+  assert.equal(ranking.status, 401);
+  assert.equal(ranking.body.code, 'UNAUTHORIZED');
 });
 
 test('監視用エンドポイントはDB接続状況と安全なメトリクスを返す', async () => {

@@ -45,6 +45,22 @@
         <div class="score-summary"><p><span>現在のスコア</span><strong id="currentScore">0</strong><small>直近14日</small></p><p><span>生涯スコア</span><strong id="lifetimeScore">0</strong><small>すべての配達</small></p></div>
         <h3>最近の加点</h3><ol id="scoreEvents" class="score-events"></ol>
       </section>
+      <section class="card ranking-card">
+        <p class="eyebrow">DRIVER RANKING</p><h2>配達員ランキング</h2>
+        <p>同じスコアは同順位として、上位10名とあなたの順位を表示します。</p>
+        <div class="ranking-grid">
+          <section aria-labelledby="currentRankingHeading">
+            <h3 id="currentRankingHeading">直近14日</h3>
+            <p id="currentRankingMe" class="ranking-me">あなたの順位を読み込み中です。</p>
+            <ol id="currentRanking" class="ranking-list"></ol>
+          </section>
+          <section aria-labelledby="lifetimeRankingHeading">
+            <h3 id="lifetimeRankingHeading">全期間</h3>
+            <p id="lifetimeRankingMe" class="ranking-me">あなたの順位を読み込み中です。</p>
+            <ol id="lifetimeRanking" class="ranking-list"></ol>
+          </section>
+        </div>
+      </section>
       <section class="card">
         <p class="eyebrow">DELIVERY HISTORY</p><h2>配達実績</h2>
         <p class="history-summary">完了した配達 <strong id="completedDeliveryCount">0</strong> 件</p>

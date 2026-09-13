@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.4.0
+  version: 0.5.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -63,6 +63,13 @@ paths:
       summary: ログイン中の配達員の直近14日スコア、累計スコア、加点履歴を取得する
       responses:
         '200': { description: 直近14日スコア、累計スコア、直近20件の加点履歴 }
+        '401': { description: Bearerトークンが不正 }
+  /api/drivers/ranking:
+    get:
+      summary: 直近14日と全期間の配達員ランキングを取得する
+      description: スコアの降順で上位10名とログイン中の配達員の順位を返す。同点は同順位とし、次の順位を同点人数分だけ空ける競技順位方式を使用する。
+      responses:
+        '200': { description: 直近14日と全期間の上位10名、ログイン中の配達員の順位 }
         '401': { description: Bearerトークンが不正 }
   /api/shifts/start:
     post:

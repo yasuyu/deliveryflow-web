@@ -23,10 +23,15 @@ const historyResultCount = document.querySelector('#historyResultCount');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const scoreEvents = document.querySelector('#scoreEvents');
+const currentRankingList = document.querySelector('#currentRanking');
+const lifetimeRankingList = document.querySelector('#lifetimeRanking');
+const currentRankingMe = document.querySelector('#currentRankingMe');
+const lifetimeRankingMe = document.querySelector('#lifetimeRankingMe');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
 let scoreState = { currentScore: 0, lifetimeScore: 0, windowDays: 14, recentEvents: [] };
+let rankingState = { current: { leaders: [], me: null }, lifetime: { leaders: [], me: null } };
 let isLoading = false;
 
 function setMessage(text, kind = 'info') {
@@ -121,6 +126,34 @@ function renderScore() {
   }
 }
 
+function renderRankingPeriod(period, list, meElement) {
+  list.replaceChildren();
+  meElement.textContent = period.me
+    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント`
+    : 'あなたの順位はまだありません。';
+
+  for (const entry of period.leaders) {
+    const item = document.createElement('li');
+    const rank = document.createElement('strong');
+    const name = document.createElement('span');
+    const score = document.createElement('b');
+    rank.textContent = `${entry.rank}位`;
+    name.textContent = entry.name;
+    score.textContent = `${entry.score} pt`;
+    if (entry.isCurrentDriver) {
+      item.className = 'ranking-list__current';
+      name.textContent += '（あなた）';
+    }
+    item.append(rank, name, score);
+    list.append(item);
+  }
+}
+
+function renderRanking() {
+  renderRankingPeriod(rankingState.current, currentRankingList, currentRankingMe);
+  renderRankingPeriod(rankingState.lifetime, lifetimeRankingList, lifetimeRankingMe);
+}
+
 function renderHistory() {
   completedDeliveryCount.textContent = String(historyState.summary.completedDeliveries);
   lastDeliveredAt.textContent = historyState.summary.lastDeliveredAt
@@ -166,6 +199,7 @@ function render() {
   actions.innerHTML = '';
   card.classList.add('hidden');
   renderScore();
+  renderRanking();
   renderHistory();
 
   if (state.driver.status === 'OFFLINE') {
@@ -236,18 +270,22 @@ async function refresh({ preserveMessage = false } = {}) {
     state = data;
     const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
     const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
-    const [historyResponse, scoreResponse] = await Promise.all([
+    const [historyResponse, scoreResponse, rankingResponse] = await Promise.all([
       fetch(`/api/deliveries/history?${historyParameters}`, { headers: authenticatedHeaders }),
       fetch('/api/drivers/me/score', { headers: authenticatedHeaders }),
+      fetch('/api/drivers/ranking', { headers: authenticatedHeaders }),
     ]);
-    const [history, score] = await Promise.all([
+    const [history, score, ranking] = await Promise.all([
       historyResponse.json().catch(() => ({})),
       scoreResponse.json().catch(() => ({})),
+      rankingResponse.json().catch(() => ({})),
     ]);
     if (!historyResponse.ok) throw new Error(`${history.code}: ${history.message}`);
     if (!scoreResponse.ok) throw new Error(`${score.code}: ${score.message}`);
+    if (!rankingResponse.ok) throw new Error(`${ranking.code}: ${ranking.message}`);
     historyState = history;
     scoreState = score;
+    rankingState = ranking;
     registrationCard.classList.add('hidden');
     workflow.classList.remove('hidden');
     render();
