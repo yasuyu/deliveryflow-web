@@ -16,6 +16,7 @@ const databasePath = path.join(projectRoot, 'prisma', databaseName);
 let serverProcess;
 let baseUrl;
 let accessToken;
+let primaryDriverId;
 
 async function createTestDatabase() {
   const prismaDirectory = path.join(projectRoot, 'prisma');
@@ -105,6 +106,7 @@ before(async () => {
   assert.equal(registration.body.driver.pinHash, undefined);
   assert.match(registration.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
   accessToken = registration.body.accessToken;
+  primaryDriverId = registration.body.driver.id;
 });
 
 after(async () => {
@@ -245,6 +247,14 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(ranking.body.current.me.rank, 1);
   assert.equal(ranking.body.current.me.isCurrentDriver, true);
   assert.equal(ranking.body.lifetime.me.score, 100);
+  assert.match(ranking.body.month.label, /^\d{4}-\d{2}$/);
+  assert.equal(ranking.body.monthly.me.monthlyTitle, '月間チャンピオン');
+  assert.equal(
+    ranking.body.monthly.leaders.filter((entry) => entry.rank === 2).every(
+      (entry) => entry.monthlyTitle === '月間準優勝',
+    ),
+    true,
+  );
 
   const otherRanking = await request('/api/drivers/ranking', {
     headers: { Authorization: `Bearer ${tiedDriver.body.accessToken}` },
@@ -252,6 +262,54 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(otherRanking.status, 200);
   assert.equal(otherRanking.body.current.me.rank, 2);
   assert.equal(otherRanking.body.current.me.isCurrentDriver, true);
+
+  const database = new DatabaseSync(databasePath);
+  const addMonthlyEvent = (driverId, points, suffix) => {
+    const occurredAt = Date.now();
+    const order = database.prepare(
+      'INSERT INTO "Order" ("storeId", "pickupName", "dropoffName", "status") VALUES (1, ?, ?, \'DELIVERED\')',
+    ).run(`月間受取${suffix}`, `月間配送${suffix}`);
+    const assignment = database.prepare(
+      'INSERT INTO "Assignment" ("orderId", "driverId", "acceptedAt", "pickedUpAt", "deliveredAt") VALUES (?, ?, ?, ?, ?)',
+    ).run(order.lastInsertRowid, driverId, occurredAt, occurredAt, occurredAt);
+    database.prepare(
+      'INSERT INTO "ScoreEvent" ("driverId", "assignmentId", "points", "reason", "createdAt") VALUES (?, ?, ?, \'月間順位テスト\', ?)',
+    ).run(driverId, assignment.lastInsertRowid, points, occurredAt);
+  };
+  addMonthlyEvent(otherDriver.body.driver.id, 60, 'A');
+  addMonthlyEvent(tiedDriver.body.driver.id, 20, 'B');
+  const podiumRanking = await request('/api/drivers/ranking', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.deepEqual(
+    podiumRanking.body.monthly.leaders.slice(0, 3).map(
+      ({ name, rank, monthlyTitle }) => ({ name, rank, monthlyTitle }),
+    ),
+    [
+      { name: 'テスト配達員', rank: 1, monthlyTitle: '月間チャンピオン' },
+      { name: '履歴分離確認配達員', rank: 2, monthlyTitle: '月間準優勝' },
+      { name: '同点確認配達員', rank: 3, monthlyTitle: '月間トップ3' },
+    ],
+  );
+
+  const titleCases = [
+    { score: 499, current: 'ルーキー', next: 'ブロンズ', pointsNeeded: 1, progressPercent: 99 },
+    { score: 500, current: 'ブロンズ', next: 'シルバー', pointsNeeded: 1000, progressPercent: 0 },
+    { score: 2999, current: 'シルバー', next: 'ゴールド', pointsNeeded: 1, progressPercent: 99 },
+    { score: 3000, current: 'ゴールド', next: null, pointsNeeded: null, progressPercent: 100 },
+  ];
+  for (const titleCase of titleCases) {
+    database.prepare('UPDATE Driver SET score = ? WHERE id = ?').run(titleCase.score, primaryDriverId);
+    const titledScore = await request('/api/drivers/me/score', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(titledScore.body.title.current.name, titleCase.current);
+    assert.equal(titledScore.body.title.next?.name || null, titleCase.next);
+    assert.equal(titledScore.body.title.next?.pointsNeeded || null, titleCase.pointsNeeded);
+    assert.equal(titledScore.body.title.progressPercent, titleCase.progressPercent);
+  }
+  database.prepare('UPDATE Driver SET score = 100 WHERE id = ?').run(primaryDriverId);
+  database.close();
 });
 
 test('配達履歴を配送状態で絞り込める', async () => {

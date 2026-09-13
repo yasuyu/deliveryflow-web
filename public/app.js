@@ -23,15 +23,30 @@ const historyResultCount = document.querySelector('#historyResultCount');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const scoreEvents = document.querySelector('#scoreEvents');
+const currentTitle = document.querySelector('#currentTitle');
+const nextTitle = document.querySelector('#nextTitle');
+const titleProgress = document.querySelector('#titleProgress');
+const monthlyRankingList = document.querySelector('#monthlyRanking');
 const currentRankingList = document.querySelector('#currentRanking');
 const lifetimeRankingList = document.querySelector('#lifetimeRanking');
 const currentRankingMe = document.querySelector('#currentRankingMe');
 const lifetimeRankingMe = document.querySelector('#lifetimeRankingMe');
+const monthlyRankingMe = document.querySelector('#monthlyRankingMe');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
-let scoreState = { currentScore: 0, lifetimeScore: 0, windowDays: 14, recentEvents: [] };
-let rankingState = { current: { leaders: [], me: null }, lifetime: { leaders: [], me: null } };
+let scoreState = {
+  currentScore: 0,
+  lifetimeScore: 0,
+  windowDays: 14,
+  title: { current: { name: 'ルーキー' }, next: null, progressPercent: 0 },
+  recentEvents: [],
+};
+let rankingState = {
+  monthly: { leaders: [], me: null },
+  current: { leaders: [], me: null },
+  lifetime: { leaders: [], me: null },
+};
 let isLoading = false;
 
 function setMessage(text, kind = 'info') {
@@ -102,6 +117,11 @@ function showOrder(order, extraLabel, extraValue, estimatedPoints = null) {
 function renderScore() {
   currentScore.textContent = String(scoreState.currentScore);
   lifetimeScore.textContent = String(scoreState.lifetimeScore);
+  currentTitle.textContent = scoreState.title.current.name;
+  titleProgress.value = scoreState.title.progressPercent;
+  nextTitle.textContent = scoreState.title.next
+    ? `次の「${scoreState.title.next.name}」まで、あと${scoreState.title.next.pointsNeeded}ポイント`
+    : '最高ランクに到達しました。';
   scoreEvents.replaceChildren();
   if (!scoreState.recentEvents.length) {
     const item = document.createElement('li');
@@ -129,7 +149,7 @@ function renderScore() {
 function renderRankingPeriod(period, list, meElement) {
   list.replaceChildren();
   meElement.textContent = period.me
-    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント`
+    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント${period.me.monthlyTitle ? ` · ${period.me.monthlyTitle}` : ''}`
     : 'あなたの順位はまだありません。';
 
   for (const entry of period.leaders) {
@@ -144,12 +164,14 @@ function renderRankingPeriod(period, list, meElement) {
       item.className = 'ranking-list__current';
       name.textContent += '（あなた）';
     }
+    if (entry.monthlyTitle) name.textContent += ` · ${entry.monthlyTitle}`;
     item.append(rank, name, score);
     list.append(item);
   }
 }
 
 function renderRanking() {
+  renderRankingPeriod(rankingState.monthly, monthlyRankingList, monthlyRankingMe);
   renderRankingPeriod(rankingState.current, currentRankingList, currentRankingMe);
   renderRankingPeriod(rankingState.lifetime, lifetimeRankingList, lifetimeRankingMe);
 }

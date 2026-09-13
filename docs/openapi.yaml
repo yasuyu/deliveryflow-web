@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.5.0
+  version: 0.6.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -60,16 +60,16 @@ paths:
         '401': { description: Bearerトークンが不正 }
   /api/drivers/me/score:
     get:
-      summary: ログイン中の配達員の直近14日スコア、累計スコア、加点履歴を取得する
+      summary: ログイン中の配達員のスコア、称号、加点履歴を取得する
       responses:
-        '200': { description: 直近14日スコア、累計スコア、直近20件の加点履歴 }
+        '200': { description: 直近14日スコア、累計スコア、現在と次の称号、進捗、直近20件の加点履歴 }
         '401': { description: Bearerトークンが不正 }
   /api/drivers/ranking:
     get:
-      summary: 直近14日と全期間の配達員ランキングを取得する
-      description: スコアの降順で上位10名とログイン中の配達員の順位を返す。同点は同順位とし、次の順位を同点人数分だけ空ける競技順位方式を使用する。
+      summary: 今月、直近14日、全期間の配達員ランキングを取得する
+      description: 日本時間の暦月、直近14日、全期間について、スコアの降順で上位10名とログイン中の配達員の順位を返す。同点は同順位とし、次の順位を同点人数分だけ空ける競技順位方式を使用する。月間1位から3位には順位別の月間称号を付け、同順位の配達員は全員同じ称号を得る。
       responses:
-        '200': { description: 直近14日と全期間の上位10名、ログイン中の配達員の順位 }
+        '200': { description: 対象月、今月・直近14日・全期間の上位10名、ログイン中の配達員の順位、月間称号 }
         '401': { description: Bearerトークンが不正 }
   /api/shifts/start:
     post:

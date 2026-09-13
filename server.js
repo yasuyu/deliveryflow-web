@@ -10,6 +10,18 @@ const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const scoreWindowDays = 14;
 const rankingLimit = 10;
+const japanUtcOffsetMilliseconds = 9 * 60 * 60 * 1000;
+const monthlyRankingTitles = new Map([
+  [1, '月間チャンピオン'],
+  [2, '月間準優勝'],
+  [3, '月間トップ3'],
+]);
+const driverTitles = [
+  { code: 'ROOKIE', name: 'ルーキー', minimumScore: 0 },
+  { code: 'BRONZE', name: 'ブロンズ', minimumScore: 500 },
+  { code: 'SILVER', name: 'シルバー', minimumScore: 1500 },
+  { code: 'GOLD', name: 'ゴールド', minimumScore: 3000 },
+];
 const completedDeliveryScoreCode = 'DELIVERY_COMPLETED';
 const loginFailures = new Map();
 const startedAt = Date.now();
@@ -377,6 +389,24 @@ async function dashboard(driverId) {
   };
 }
 
+function buildDriverTitle(lifetimeScore) {
+  const currentIndex = Math.max(
+    0,
+    driverTitles.findLastIndex((title) => lifetimeScore >= title.minimumScore),
+  );
+  const current = driverTitles[currentIndex];
+  const nextTitle = driverTitles[currentIndex + 1] || null;
+  if (!nextTitle) return { current, next: null, progressPercent: 100 };
+
+  const scoreWithinLevel = lifetimeScore - current.minimumScore;
+  const levelRange = nextTitle.minimumScore - current.minimumScore;
+  return {
+    current,
+    next: { ...nextTitle, pointsNeeded: nextTitle.minimumScore - lifetimeScore },
+    progressPercent: Math.max(0, Math.floor((scoreWithinLevel / levelRange) * 100)),
+  };
+}
+
 async function driverScore(driverId) {
   const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
   const [driver, currentScore, recentEvents] = await prisma.$transaction([
@@ -398,6 +428,7 @@ async function driverScore(driverId) {
     currentScore: currentScore._sum.points || 0,
     lifetimeScore: driver.score,
     windowDays: scoreWindowDays,
+    title: buildDriverTitle(driver.score),
     recentEvents,
   };
 }
@@ -425,13 +456,41 @@ function buildRanking(drivers, scoresByDriverId, currentDriverId) {
   };
 }
 
+function currentJapanMonthWindow(now = new Date()) {
+  const japanTime = new Date(now.getTime() + japanUtcOffsetMilliseconds);
+  const year = japanTime.getUTCFullYear();
+  const monthIndex = japanTime.getUTCMonth();
+  return {
+    label: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+    startsAt: new Date(Date.UTC(year, monthIndex, 1) - japanUtcOffsetMilliseconds),
+    endsAt: new Date(Date.UTC(year, monthIndex + 1, 1) - japanUtcOffsetMilliseconds),
+  };
+}
+
+function addMonthlyTitles(period) {
+  const withTitle = (entry) => ({
+    ...entry,
+    monthlyTitle: monthlyRankingTitles.get(entry.rank) || null,
+  });
+  return {
+    leaders: period.leaders.map(withTitle),
+    me: period.me ? withTitle(period.me) : null,
+  };
+}
+
 async function driverRanking(driverId) {
   const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
-  const [drivers, currentScores] = await prisma.$transaction([
+  const month = currentJapanMonthWindow();
+  const [drivers, currentScores, monthlyScores] = await prisma.$transaction([
     prisma.driver.findMany({ select: { id: true, name: true, score: true } }),
     prisma.scoreEvent.groupBy({
       by: ['driverId'],
       where: { createdAt: { gte: windowStartedAt } },
+      _sum: { points: true },
+    }),
+    prisma.scoreEvent.groupBy({
+      by: ['driverId'],
+      where: { createdAt: { gte: month.startsAt, lt: month.endsAt } },
       _sum: { points: true },
     }),
   ]);
@@ -439,11 +498,16 @@ async function driverRanking(driverId) {
     currentScores.map((entry) => [entry.driverId, entry._sum.points || 0]),
   );
   const lifetimeScoresByDriverId = new Map(drivers.map((driver) => [driver.id, driver.score]));
+  const monthlyScoresByDriverId = new Map(
+    monthlyScores.map((entry) => [entry.driverId, entry._sum.points || 0]),
+  );
 
   return {
     windowDays: scoreWindowDays,
     limit: rankingLimit,
     tiePolicy: 'competition',
+    month,
+    monthly: addMonthlyTitles(buildRanking(drivers, monthlyScoresByDriverId, driverId)),
     current: buildRanking(drivers, currentScoresByDriverId, driverId),
     lifetime: buildRanking(drivers, lifetimeScoresByDriverId, driverId),
   };
