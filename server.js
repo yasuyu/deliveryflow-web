@@ -8,6 +8,8 @@ const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
 const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
+const scoreWindowDays = 14;
+const completedDeliveryScoreCode = 'DELIVERY_COMPLETED';
 const loginFailures = new Map();
 const startedAt = Date.now();
 const metrics = {
@@ -319,6 +321,16 @@ async function expireOffers() {
 }
 
 async function ensureSeed() {
+  await prisma.scoreRule.upsert({
+    where: { code: completedDeliveryScoreCode },
+    update: {},
+    create: {
+      code: completedDeliveryScoreCode,
+      label: '配達完了',
+      points: 100,
+    },
+  });
+
   let driver = await currentDriver();
   if (!driver) {
     driver = await prisma.driver.create({ data: { name: '山田 配達員' } });
@@ -354,10 +366,38 @@ async function dashboard(driverId) {
     where: { driverId: driver.id, deliveredAt: null },
     include: { order: { include: { store: true } } },
   });
+  const scoreRule = offer
+    ? await prisma.scoreRule.findUnique({ where: { code: completedDeliveryScoreCode } })
+    : null;
   return {
     driver: publicDriver(await prisma.driver.findUnique({ where: { id: driverId } })),
-    offer,
+    offer: offer ? { ...offer, estimatedPoints: scoreRule?.active ? scoreRule.points : 0 } : null,
     assignment,
+  };
+}
+
+async function driverScore(driverId) {
+  const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
+  const [driver, currentScore, recentEvents] = await prisma.$transaction([
+    prisma.driver.findUnique({ where: { id: driverId }, select: { score: true } }),
+    prisma.scoreEvent.aggregate({
+      where: { driverId, createdAt: { gte: windowStartedAt } },
+      _sum: { points: true },
+    }),
+    prisma.scoreEvent.findMany({
+      where: { driverId },
+      include: {
+        assignment: { include: { order: { include: { store: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+  ]);
+  return {
+    currentScore: currentScore._sum.points || 0,
+    lifetimeScore: driver.score,
+    windowDays: scoreWindowDays,
+    recentEvents,
   };
 }
 
@@ -619,18 +659,50 @@ async function completeAssignment(driver, assignmentId) {
   if (!assignment || assignment.order.status !== 'PICKED_UP') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる配達がありません');
   }
-  await prisma.$transaction([
-    prisma.assignment.update({
-      where: { id: assignment.id },
+  const scoreAward = await prisma.$transaction(async (transaction) => {
+    const completed = await transaction.assignment.updateMany({
+      where: {
+        id: assignment.id,
+        driverId: driver.id,
+        pickedUpAt: { not: null },
+        deliveredAt: null,
+      },
       data: { deliveredAt: new Date() },
-    }),
-    prisma.order.update({
-      where: { id: assignment.orderId },
+    });
+    if (!completed.count) {
+      throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'この配達はすでに完了しています');
+    }
+
+    const updatedOrder = await transaction.order.updateMany({
+      where: { id: assignment.orderId, status: 'PICKED_UP' },
       data: { status: 'DELIVERED' },
-    }),
-    prisma.driver.update({ where: { id: driver.id }, data: { status: 'IDLE' } }),
-  ]);
+    });
+    if (!updatedOrder.count) {
+      throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる注文状態ではありません');
+    }
+
+    const rule = await transaction.scoreRule.findUnique({
+      where: { code: completedDeliveryScoreCode },
+    });
+    if (!rule?.active) {
+      throw new ApiError(503, 'SCORE_RULE_UNAVAILABLE', '配達完了の加点ルールを利用できません');
+    }
+    const event = await transaction.scoreEvent.create({
+      data: {
+        driverId: driver.id,
+        assignmentId: assignment.id,
+        points: rule.points,
+        reason: rule.label,
+      },
+    });
+    await transaction.driver.update({
+      where: { id: driver.id },
+      data: { status: 'IDLE', score: { increment: rule.points } },
+    });
+    return { points: event.points, reason: event.reason, createdAt: event.createdAt };
+  });
   await createNextOffer(driver);
+  return scoreAward;
 }
 
 async function logoutDriver(driver) {
@@ -706,6 +778,9 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/api/deliveries/history') {
     return json(response, 200, await deliveryHistory(driver.id, url.searchParams));
   }
+  if (request.method === 'GET' && url.pathname === '/api/drivers/me/score') {
+    return json(response, 200, await driverScore(driver.id));
+  }
 
   const idempotentResponse = async (operation) => {
     const result = await runIdempotently(request, driver, operation);
@@ -752,8 +827,8 @@ async function handle(request, response) {
   const complete = url.pathname.match(/^\/api\/assignments\/(\d+)\/complete$/);
   if (request.method === 'POST' && complete) {
     return idempotentResponse(async () => {
-      await completeAssignment(driver, Number(complete[1]));
-      return dashboard(driver.id);
+      const scoreAward = await completeAssignment(driver, Number(complete[1]));
+      return { ...await dashboard(driver.id), scoreAward };
     });
   }
   return json(response, 404, { code: 'NOT_FOUND', message: 'このエンドポイントは存在しません' });

@@ -145,7 +145,25 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const completed = await authenticatedPost(`/api/assignments/${assignmentId}/complete`, 'complete-order');
   assert.equal(completed.status, 200);
   assert.equal(completed.body.driver.status, 'IDLE');
+  assert.equal(completed.body.driver.score, 100);
   assert.equal(completed.body.assignment, null);
+  assert.equal(completed.body.scoreAward.points, 100);
+  assert.equal(completed.body.scoreAward.reason, '配達完了');
+
+  const repeatedCompletion = await authenticatedPost(`/api/assignments/${assignmentId}/complete`, 'complete-order');
+  assert.equal(repeatedCompletion.status, 200);
+  assert.deepEqual(repeatedCompletion.body, completed.body);
+
+  const score = await request('/api/drivers/me/score', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert.equal(score.status, 200);
+  assert.equal(score.body.currentScore, 100);
+  assert.equal(score.body.lifetimeScore, 100);
+  assert.equal(score.body.windowDays, 14);
+  assert.equal(score.body.recentEvents.length, 1);
+  assert.equal(score.body.recentEvents[0].points, 100);
+  assert.equal(score.body.recentEvents[0].assignment.order.status, 'DELIVERED');
 
   const history = await request('/api/deliveries/history', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -197,6 +215,14 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(otherHistory.status, 200);
   assert.equal(otherHistory.body.summary.completedDeliveries, 0);
   assert.deepEqual(otherHistory.body.deliveries, []);
+
+  const otherScore = await request('/api/drivers/me/score', {
+    headers: { Authorization: `Bearer ${otherDriver.body.accessToken}` },
+  });
+  assert.equal(otherScore.status, 200);
+  assert.equal(otherScore.body.currentScore, 0);
+  assert.equal(otherScore.body.lifetimeScore, 0);
+  assert.deepEqual(otherScore.body.recentEvents, []);
 });
 
 test('配達履歴を配送状態で絞り込める', async () => {

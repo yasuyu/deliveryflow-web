@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.3.0
+  version: 0.4.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -57,6 +57,12 @@ paths:
       responses:
         '200': { description: 完了件数、最終配達時刻、配達履歴 }
         '400': { description: 絞り込み条件が不正 }
+        '401': { description: Bearerトークンが不正 }
+  /api/drivers/me/score:
+    get:
+      summary: ログイン中の配達員の直近14日スコア、累計スコア、加点履歴を取得する
+      responses:
+        '200': { description: 直近14日スコア、累計スコア、直近20件の加点履歴 }
         '401': { description: Bearerトークンが不正 }
   /api/shifts/start:
     post:
@@ -130,6 +136,7 @@ paths:
   /api/assignments/{assignmentId}/complete:
     post:
       summary: 配達を完了する PICKED_UP to DELIVERED
+      description: 配達完了を記録し、設定中のScoreRuleに従って一度だけ加点する
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - name: assignmentId
@@ -137,7 +144,7 @@ paths:
           required: true
           schema: { type: integer }
       responses:
-        '200': { description: 配達完了 }
+        '200': { description: 配達完了後のダッシュボード状態と今回の加点内容 }
 components:
   parameters:
     IdempotencyKey:
