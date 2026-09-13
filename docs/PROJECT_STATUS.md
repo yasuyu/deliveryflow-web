@@ -34,7 +34,9 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Return the last 14 days and all-time top 10 rankings from `GET /api/drivers/ranking`
 - Return and highlight the logged-in driver's own rank
 - Use documented competition ranking for tied scores
-- Display both ranking periods in the web UI
+- Display all three ranking periods in the web UI
+- Rank monthly score by Japan calendar month and display it alongside the existing periods
+- Give all drivers ranked first, second, or third the corresponding monthly title, including ties
 - Derive Rookie, Bronze, Silver, and Gold titles from cumulative score
 - Return the current title, next title, points needed, and progress from `GET /api/drivers/me/score`
 - Display title progress in the web UI and cover score boundaries in automated tests
