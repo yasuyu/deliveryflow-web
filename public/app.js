@@ -20,9 +20,13 @@ const deliveryHistoryList = document.querySelector('#deliveryHistory');
 const historyFilterForm = document.querySelector('#historyFilterForm');
 const historyFilterReset = document.querySelector('#historyFilterReset');
 const historyResultCount = document.querySelector('#historyResultCount');
+const currentScore = document.querySelector('#currentScore');
+const lifetimeScore = document.querySelector('#lifetimeScore');
+const scoreEvents = document.querySelector('#scoreEvents');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
+let scoreState = { currentScore: 0, lifetimeScore: 0, windowDays: 14, recentEvents: [] };
 let isLoading = false;
 
 function setMessage(text, kind = 'info') {
@@ -78,7 +82,7 @@ function formatJapanTime(value) {
   }).format(new Date(value));
 }
 
-function showOrder(order, extraLabel, extraValue) {
+function showOrder(order, extraLabel, extraValue, estimatedPoints = null) {
   card.classList.remove('hidden');
   detail.innerHTML = `<dl>
     <dt>店舗</dt><dd>${order.store.name}</dd>
@@ -86,7 +90,35 @@ function showOrder(order, extraLabel, extraValue) {
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
     <dt>注文の状態</dt><dd>${order.status}</dd>
     <dt>${extraLabel}</dt><dd>${extraValue}</dd>
+    ${estimatedPoints === null ? '' : `<dt>見込みスコア</dt><dd>+${estimatedPoints}ポイント</dd>`}
   </dl>`;
+}
+
+function renderScore() {
+  currentScore.textContent = String(scoreState.currentScore);
+  lifetimeScore.textContent = String(scoreState.lifetimeScore);
+  scoreEvents.replaceChildren();
+  if (!scoreState.recentEvents.length) {
+    const item = document.createElement('li');
+    item.className = 'score-events__empty';
+    item.textContent = '配達を完了すると、ここに加点履歴が表示されます。';
+    scoreEvents.append(item);
+    return;
+  }
+  for (const event of scoreState.recentEvents) {
+    const item = document.createElement('li');
+    const reason = document.createElement('strong');
+    const destination = document.createElement('span');
+    const points = document.createElement('b');
+    const time = document.createElement('time');
+    reason.textContent = event.reason;
+    destination.textContent = event.assignment.order.dropoffName;
+    points.textContent = `+${event.points}`;
+    time.dateTime = event.createdAt;
+    time.textContent = formatJapanTime(event.createdAt);
+    item.append(reason, destination, points, time);
+    scoreEvents.append(item);
+  }
 }
 
 function renderHistory() {
@@ -133,6 +165,7 @@ function render() {
 
   actions.innerHTML = '';
   card.classList.add('hidden');
+  renderScore();
   renderHistory();
 
   if (state.driver.status === 'OFFLINE') {
@@ -150,6 +183,7 @@ function render() {
       state.offer.order,
       'オファー期限',
       state.offer.expiresAt ? formatJapanTime(state.offer.expiresAt) : '期限なし',
+      state.offer.estimatedPoints,
     );
   }
   if (state.assignment) {
@@ -201,12 +235,19 @@ async function refresh({ preserveMessage = false } = {}) {
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
     const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
-    const historyResponse = await fetch(`/api/deliveries/history?${historyParameters}`, {
-      headers: { Authorization: `Bearer ${driverToken}` },
-    });
-    const history = await historyResponse.json().catch(() => ({}));
+    const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
+    const [historyResponse, scoreResponse] = await Promise.all([
+      fetch(`/api/deliveries/history?${historyParameters}`, { headers: authenticatedHeaders }),
+      fetch('/api/drivers/me/score', { headers: authenticatedHeaders }),
+    ]);
+    const [history, score] = await Promise.all([
+      historyResponse.json().catch(() => ({})),
+      scoreResponse.json().catch(() => ({})),
+    ]);
     if (!historyResponse.ok) throw new Error(`${history.code}: ${history.message}`);
+    if (!scoreResponse.ok) throw new Error(`${score.code}: ${score.message}`);
     historyState = history;
+    scoreState = score;
     registrationCard.classList.add('hidden');
     workflow.classList.remove('hidden');
     render();
@@ -280,6 +321,7 @@ actions.addEventListener('click', async (event) => {
   setLoading(true);
   setMessage(`${actionName}を処理しています。`, 'loading');
   try {
+    let actionResult;
     if (action === 'start') await request('/api/shifts/start');
     if (action === 'end') await request('/api/shifts/end');
     if (action === 'offer') await request('/api/offers/current');
@@ -293,9 +335,11 @@ actions.addEventListener('click', async (event) => {
     if (action.startsWith('accept:')) await request(`/api/offers/${action.split(':')[1]}/accept`);
     if (action.startsWith('reject:')) await request(`/api/offers/${action.split(':')[1]}/reject`);
     if (action.startsWith('pickup:')) await request(`/api/assignments/${action.split(':')[1]}/pickup`);
-    if (action.startsWith('complete:')) await request(`/api/assignments/${action.split(':')[1]}/complete`);
+    if (action.startsWith('complete:')) actionResult = await request(`/api/assignments/${action.split(':')[1]}/complete`);
     await refresh({ preserveMessage: true });
-    setMessage(`${actionName}が完了しました。`, 'success');
+    setMessage(actionResult?.scoreAward
+      ? `${actionName}が完了しました。${actionResult.scoreAward.reason}で +${actionResult.scoreAward.points}ポイント獲得しました。`
+      : `${actionName}が完了しました。`, 'success');
   } catch (error) {
     setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
   } finally {

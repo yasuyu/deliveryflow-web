@@ -28,8 +28,33 @@ model Driver {
   pinHash         String?
   status         String       @default("OFFLINE")
   shiftStartedAt DateTime?
+  score          Int          @default(0)
   offers         Offer[]
   assignments    Assignment[]
+  scoreEvents    ScoreEvent[]
+}
+
+model ScoreRule {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  label     String
+  points    Int
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ScoreEvent {
+  id           Int        @id @default(autoincrement())
+  driverId     Int
+  assignmentId Int        @unique
+  points       Int
+  reason       String
+  createdAt    DateTime   @default(now())
+  driver       Driver     @relation(fields: [driverId], references: [id])
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([driverId, createdAt])
 }
 
 model Store {
@@ -69,4 +94,5 @@ model Assignment {
   deliveredAt DateTime?
   order       Order     @relation(fields: [orderId], references: [id])
   driver      Driver    @relation(fields: [driverId], references: [id])
+  scoreEvent  ScoreEvent?
 }
