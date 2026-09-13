@@ -31,6 +31,10 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Return the last 14 days, cumulative score, and recent award history from `GET /api/drivers/me/score`
 - Display estimated award points, the score summary, and recent score history in the web UI
 - Prevent duplicate score awards for the same delivery
+- Return the last 14 days and all-time top 10 rankings from `GET /api/drivers/ranking`
+- Return and highlight the logged-in driver's own rank
+- Use documented competition ranking for tied scores
+- Display both ranking periods in the web UI
 - SQLite and PostgreSQL migrations, OpenAPI updates, and automated tests
 
 ### Platform and quality
@@ -48,6 +52,7 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 
 - PR #4: delivery history search and filtering
 - PR #5: driver score tracking and UI
+- PR #6: repository guidance and project status
 
 ## Partially implemented
 
@@ -55,30 +60,26 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 
 ## Recommended next feature
 
-### Driver ranking
+### Driver titles or badges
 
-- Rankings for the last 14 days and for all time
-- Rank, driver display name, and score for top drivers
-- The logged-in driver's own rank
-- A documented and tested policy for tied scores
-- `GET /api/drivers/ranking`
-- Ranking UI
-- Authorization, privacy, SQLite, and PostgreSQL coverage
+- Award visible titles at documented score thresholds
+- Show current and next titles with progress
+- Keep title calculation deterministic from existing score data
+- Add API, UI, and boundary-value tests
 
-Suggested branch: `feature/driver-ranking`
+Suggested branch: `feature/driver-titles`
 
 ## Later roadmap
 
-1. Driver titles or badges
-2. Weather, late-night, and other bonus score rules
-3. GPS location, distance calculation, maps, and route display
-4. WebSocket updates and an offline operation queue
-5. Stagnation detection, safety alerts, and an order simulator
-6. Redis, multi-server operation, and external cloud deployment when needed
+1. Weather, late-night, and other bonus score rules
+2. GPS location, distance calculation, maps, and route display
+3. WebSocket updates and an offline operation queue
+4. Stagnation detection, safety alerts, and an order simulator
+5. Redis, multi-server operation, and external cloud deployment when needed
 
 ## Verification baseline
 
-- PR #5 CI completed successfully.
+- PR #6 CI completed successfully.
 - CI covered the SQLite test suite and PostgreSQL container smoke test.
 - Post-merge syntax checks and automated tests succeeded.
 

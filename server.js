@@ -9,6 +9,7 @@ const scrypt = promisify(scryptCallback);
 const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const scoreWindowDays = 14;
+const rankingLimit = 10;
 const completedDeliveryScoreCode = 'DELIVERY_COMPLETED';
 const loginFailures = new Map();
 const startedAt = Date.now();
@@ -401,6 +402,53 @@ async function driverScore(driverId) {
   };
 }
 
+function buildRanking(drivers, scoresByDriverId, currentDriverId) {
+  const sorted = drivers
+    .map((driver) => ({
+      driverId: driver.id,
+      name: driver.name,
+      score: scoresByDriverId.get(driver.id) || 0,
+    }))
+    .sort((left, right) => right.score - left.score || left.driverId - right.driverId);
+
+  let previousScore = null;
+  let rank = 0;
+  const entries = sorted.map((entry, index) => {
+    if (entry.score !== previousScore) rank = index + 1;
+    previousScore = entry.score;
+    return { ...entry, rank, isCurrentDriver: entry.driverId === currentDriverId };
+  });
+
+  return {
+    leaders: entries.slice(0, rankingLimit),
+    me: entries.find((entry) => entry.driverId === currentDriverId),
+  };
+}
+
+async function driverRanking(driverId) {
+  const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
+  const [drivers, currentScores] = await prisma.$transaction([
+    prisma.driver.findMany({ select: { id: true, name: true, score: true } }),
+    prisma.scoreEvent.groupBy({
+      by: ['driverId'],
+      where: { createdAt: { gte: windowStartedAt } },
+      _sum: { points: true },
+    }),
+  ]);
+  const currentScoresByDriverId = new Map(
+    currentScores.map((entry) => [entry.driverId, entry._sum.points || 0]),
+  );
+  const lifetimeScoresByDriverId = new Map(drivers.map((driver) => [driver.id, driver.score]));
+
+  return {
+    windowDays: scoreWindowDays,
+    limit: rankingLimit,
+    tiePolicy: 'competition',
+    current: buildRanking(drivers, currentScoresByDriverId, driverId),
+    lifetime: buildRanking(drivers, lifetimeScoresByDriverId, driverId),
+  };
+}
+
 function parseHistoryDate(value, fieldName) {
   if (!value) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -780,6 +828,9 @@ async function handle(request, response) {
   }
   if (request.method === 'GET' && url.pathname === '/api/drivers/me/score') {
     return json(response, 200, await driverScore(driver.id));
+  }
+  if (request.method === 'GET' && url.pathname === '/api/drivers/ranking') {
+    return json(response, 200, await driverRanking(driver.id));
   }
 
   const idempotentResponse = async (operation) => {
