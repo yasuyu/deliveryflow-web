@@ -18,12 +18,10 @@ RUN DATABASE_PROVIDER=postgresql \
     DATABASE_URL=postgresql://build:build@localhost:5432/build \
     node node_modules/prisma/build/index.js generate
 
-COPY --chown=node:node server.js ./
-COPY --chown=node:node score-bonuses.js ./
-COPY --chown=node:node location.js ./
-COPY --chown=node:node public ./public
+COPY --chown=node:node apps/server/src ./apps/server/src
+COPY --chown=node:node apps/web/public ./apps/web/public
 COPY --chown=node:node docs ./docs
-COPY docker-entrypoint.sh ./
+COPY apps/server/docker-entrypoint.sh ./
 
 RUN mkdir /data && chown node:node /data
 RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
@@ -37,4 +35,4 @@ ENV OFFER_TTL_SECONDS=120
 EXPOSE 3000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node apps/server/src/main.js"]

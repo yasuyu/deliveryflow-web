@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { buildScoreSnapshot, isLateNight } = require('../score-bonuses');
+const { buildScoreSnapshot, isLateNight } = require('../src/modules/score/score-bonuses');
 
 const rules = [
   { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100, active: true },

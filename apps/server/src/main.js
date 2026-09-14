@@ -7,8 +7,8 @@ const {
   buildScoreSnapshot,
   parseBreakdown,
   scoreRuleCodes,
-} = require('./score-bonuses');
-const { distanceMeters, locationStatus, validateLocation } = require('./location');
+} = require('./modules/score/score-bonuses');
+const { distanceMeters, locationStatus, validateLocation } = require('./modules/location/location');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -42,8 +42,8 @@ if (!['sqlite', 'postgresql'].includes(databaseProvider)) {
   throw new Error('DATABASE_PROVIDER must be sqlite or postgresql');
 }
 const prismaClientPath = databaseProvider === 'postgresql'
-  ? './generated/client-postgresql'
-  : './generated/client-v2';
+  ? '../../../generated/client-postgresql'
+  : '../../../generated/client-v2';
 const { PrismaClient } = require(prismaClientPath);
 
 function positiveIntegerFromEnv(name, defaultValue) {
@@ -254,8 +254,11 @@ function readJsonBody(request) {
   });
 }
 
-function serveFile(response, fileName, contentType) {
-  fs.readFile(path.join(__dirname, 'public', fileName), (error, content) => {
+const webPublicDirectory = path.resolve(__dirname, '../../web/public');
+const documentationDirectory = path.resolve(__dirname, '../../../docs');
+
+function serveFile(response, filePath, contentType) {
+  fs.readFile(filePath, (error, content) => {
     if (error) {
       json(response, 404, { code: 'NOT_FOUND', message: 'ファイルが見つかりません' });
       return;
@@ -982,11 +985,11 @@ async function handle(request, response) {
     return json(response, 200, metricsBody());
   }
 
-  if (request.method === 'GET' && url.pathname === '/') return serveFile(response, 'index.html', 'text/html; charset=utf-8');
-  if (request.method === 'GET' && url.pathname === '/docs') return serveFile(response, 'docs.html', 'text/html; charset=utf-8');
-  if (request.method === 'GET' && url.pathname === '/openapi.yaml') return serveFile(response, '../docs/openapi.yaml', 'text/yaml; charset=utf-8');
-  if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, 'app.js', 'application/javascript; charset=utf-8');
-  if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, 'style.css', 'text/css; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/') return serveFile(response, path.join(webPublicDirectory, 'index.html'), 'text/html; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/docs') return serveFile(response, path.join(webPublicDirectory, 'docs.html'), 'text/html; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/openapi.yaml') return serveFile(response, path.join(documentationDirectory, 'openapi.yaml'), 'text/yaml; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, path.join(webPublicDirectory, 'style.css'), 'text/css; charset=utf-8');
 
   if (request.method === 'POST' && url.pathname === '/api/drivers') {
     const { name, pin } = await readJsonBody(request);

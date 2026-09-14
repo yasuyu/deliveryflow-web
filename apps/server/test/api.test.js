@@ -8,7 +8,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(__dirname, '../../..');
 const testDatabasePrefix = 'deliveryflow-test-';
 const databaseName = `deliveryflow-test-${randomUUID()}.db`;
 const databaseUrl = `file:./${databaseName}`;
@@ -84,7 +84,7 @@ before(async () => {
 
   const port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  serverProcess = spawn(process.execPath, ['server.js'], {
+  serverProcess = spawn(process.execPath, ['apps/server/src/main.js'], {
     cwd: projectRoot,
     env: {
       ...process.env,
