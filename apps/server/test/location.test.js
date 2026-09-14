@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { distanceMeters, locationStatus, validateLocation } = require('../location');
+const { distanceMeters, locationStatus, validateLocation } = require('../src/modules/location/location');
 
 test('2点間の直線距離をメートル単位で計算する', () => {
   assert.equal(distanceMeters(

@@ -1,20 +1,22 @@
 # DeliveryFlow Web
 
-配達員へのオファー提示、受諾、荷物の受取、配達完了までを扱う学習用Webアプリです。
-ハッカソンで学んだ状態遷移を、Windowsで動かせる構成としてゼロから再実装しています。
+DeliveryFlowは、配達員の「勤務開始 → オファー確認 → 受諾 → 荷物受取 → 配達完了」をブラウザで試せる学習用Webアプリです。
 
-## 使用技術
+すべて自分のPC内で無料で動かせます。普段の開発にはSQLite、本番に近い確認にはDocker ComposeとPostgreSQLを使います。
 
-- Node.js: APIとWebサーバー
-- HTML / CSS / JavaScript: ブラウザ画面
-- Prisma: Node.jsからデータベースを操作するためのORM
-- SQLite: ローカル開発用データベース
-- OpenAPI: APIの契約書
-- GitHub Actions: push、Pull Request時の自動チェック
+## できること
 
-## 初回セットアップ
+- 配達員の登録、6桁PINでのログイン、ログアウト
+- 正しい状態遷移に沿った配達操作
+- 配達履歴の検索と絞り込み
+- 基本点、雨天・深夜ボーナス、称号、月間・14日間・全期間ランキング
+- 明示的に許可した現在地から店舗までの直線距離表示
+- SQLiteとPostgreSQLの両方で同じAPIを実行
+- OpenAPI仕様、テスト、CIによる動作確認
 
-PowerShellでプロジェクトを開き、次を実行します。
+## まず動かす
+
+必要なものはNode.js 22以上とnpmです。PowerShellでリポジトリを開き、次を実行します。
 
 ```powershell
 Copy-Item .env.example .env
@@ -24,239 +26,163 @@ npm run db:generate
 npm start
 ```
 
-ブラウザで <http://localhost:3000> を開きます。API仕様は <http://localhost:3000/docs> です。
+起動後に開く場所:
 
-## `.env` と環境変数
+- アプリ: <http://localhost:3000>
+- API仕様: <http://localhost:3000/docs>
+- ヘルスチェック: <http://localhost:3000/healthz>
 
-`.env` は、ソースコードに直接書きたくない「実行環境ごとに変わる設定」を置くローカル専用ファイルです。Gitの管理対象外なので、将来パスワードや接続先が入っても誤ってGitHubへ送らないようにできます。共有するのは値を含まない雛形の `.env.example` です。
+## 画面で試す順番
 
-```env
-DATABASE_URL="file:./delivery.db" # SQLiteデータベースの接続先
-PORT=3000                          # Webサーバーの待受ポート
-OFFER_TTL_SECONDS=120              # オファーの有効期限（秒）
-# SCORE_BONUS_SIMULATED_NOW="2026-09-14T22:00:00+09:00" # 深夜判定をデモするときだけ指定
+1. 名前と6桁PINを入力して配達員を登録します。
+2. 「稼働を開始する」を押します。
+3. 必要なら「現在地を更新する」を押し、ブラウザの位置情報を許可します。
+4. 「オファーを確認する」を押します。
+5. 配達詳細で、見込みスコアと直線距離を確認します。
+6. 受諾、荷物受取、配達完了の順に進めます。
+7. 業務が終わったら退勤します。保存中の現在地はこの時点で削除されます。
+
+雨天ボーナスは画面の「天候シミュレーター」で確認できます。外部の気象APIには接続しません。
+
+## ディレクトリ構成
+
+写真の参考構成にならい、Web画面、サーバー、機能モジュール、DB、文書を分けています。
+
+```text
+deliveryflow-web/
+├─ README.md                         最初に読む手順書
+├─ AGENTS.md                         開発時のルール
+├─ package.json                      npmコマンドと依存関係
+├─ prisma.config.ts                  DB種別とSchemaの選択
+├─ compose.yaml                      PostgreSQL版のローカル構成
+├─ apps/
+│  ├─ server/
+│  │  ├─ Dockerfile                 APIコンテナ
+│  │  ├─ docker-entrypoint.sh       コンテナ起動処理
+│  │  ├─ src/
+│  │  │  ├─ main.js                 API、認証、状態遷移
+│  │  │  └─ modules/
+│  │  │     ├─ location/            位置の鮮度と距離計算
+│  │  │     └─ score/               スコアとボーナス計算
+│  │  └─ test/                      API・機能テスト
+│  └─ web/
+│     └─ public/                    HTML、CSS、ブラウザJS
+├─ prisma/                           DB SchemaとMigration
+├─ docs/
+│  ├─ architecture.md               構成と責務の詳しい説明
+│  ├─ openapi.yaml                  APIの契約書
+│  └─ PROJECT_STATUS.md             実装状況と次の候補
+└─ scripts/                          負荷試験・DB確認ツール
 ```
 
-`npm start` は Node.js の `--env-file=.env` を使って、この設定を読み込んでからサーバーを起動します。`DATABASE_URL` が未設定、または `PORT` / `OFFER_TTL_SECONDS` が正の整数でない場合は、設定ミスとして起動を止めます。
-
-ポートを変える例です。変更後は、表示されるURLのポート番号も同じ値にしてください。
-
-```powershell
-(Get-Content .env) -replace '^PORT=.*$', 'PORT=3100' | Set-Content .env
-npm start
-```
+詳しい責務と、変更内容ごとに触る場所は [docs/architecture.md](docs/architecture.md) を参照してください。
 
 ## よく使うコマンド
 
-```powershell
-npm start              # アプリを起動
-npm run check          # JavaScriptの構文を確認
-npm test               # APIと状態遷移を自動で確認
-npm run db:migrate     # schemaの変更をMigrationとしてDBへ反映
-npm run db:generate    # Prisma Clientを再生成
-npm run db:studio      # Prisma StudioでDBを見る
+| コマンド | 目的 |
+|---|---|
+| `npm start` | SQLite版アプリを起動 |
+| `npm run check` | JavaScriptの構文を確認 |
+| `npm test` | 一時DBで全自動テストを実行 |
+| `npm run db:migrate` | SQLiteへMigrationを適用 |
+| `npm run db:generate` | Prisma Clientを再生成 |
+| `npm run db:studio` | SQLiteをPrisma Studioで確認 |
+| `npm run dev:postgres` | PostgreSQL版をCompose Watchで起動 |
+| `npm run studio:postgres` | PostgreSQLをPrisma Studioで確認 |
+| `npm run load-test` | ローカルのヘルスチェックへ負荷試験 |
+
+## 設定ファイル
+
+`.env`はPCごとのローカル設定です。Gitには保存されません。
+
+```env
+DATABASE_URL="file:./delivery.db"
+PORT=3000
+OFFER_TTL_SECONDS=120
+# SCORE_BONUS_SIMULATED_NOW="2026-09-14T22:00:00+09:00"
 ```
 
-## 自動テスト
+- `DATABASE_URL`: SQLiteファイルの場所。Prisma Schemaからの相対位置です。
+- `PORT`: アプリのポート番号。
+- `OFFER_TTL_SECONDS`: オファーが期限切れになるまでの秒数。
+- `SCORE_BONUS_SIMULATED_NOW`: 深夜ボーナスを日中に試す場合だけ指定します。
 
-`npm test` は開発用の `delivery.db` を使いません。テスト実行ごとに一時的なSQLiteデータベースを作り、Migrationを適用してからAPIを起動します。現在は次を確認しています。
+## 現在地とプライバシー
 
-- 配達員が稼働開始し、オファーを表示・受諾・受取・完了できること
-- 完了した配達を本人の履歴と実績件数で確認できること
-- 配達完了で100ポイント加算され、同じ操作を再送しても二重加点されないこと
-- 雨天・深夜ボーナスの選択、重ね掛け、時間境界、内訳、二重加点防止
-- 本人の直近14日スコア、累計スコア、加点履歴を取得できること
-- 直近14日と全期間のランキング、本人順位、同点順位を取得できること
-- 累計スコアの境界値に応じて称号と次の称号までの進捗を取得できること
-- 状態が `IDLE` → `OFFERED` → `BUSY` → `IDLE` と正しく変わること
-- 同じ `Idempotency-Key` の再送が同じ結果を返すこと
-- Bearerトークンなしでは配達員用APIを呼べないこと
-- 配達員IDだけでは認証できず、推測困難なトークンが必要なこと
-- PINで同じ配達員として再ログインできること
-- 勤務中はログアウトできず、OFFLINEの場合だけログアウトできること
-- 現在地の入力範囲、5分の鮮度判定、直線距離の計算
-- 現在地を勤務中だけ更新でき、退勤時にDBから削除すること
+位置情報は「現在地を更新する」を押したときだけブラウザへ要求します。自動追跡やバックグラウンド取得は行いません。
 
-テスト用DBは終了時に自動で削除されます。Node.js 22の標準SQLite機能を使っているため、追加のテスト用パッケージは不要です。
+- 保存できるのは勤務中だけです。
+- 最終更新から5分を超えると、店舗までの計算には使いません。
+- 退勤すると緯度・経度・精度・更新時刻をDBから削除します。
+- API画面には正確な緯度・経度を返しません。
+- 距離は外部地図へ送らず、サーバー内で直線距離として計算します。
+- 店舗と届け先の座標はBKC周辺の学習用仮データです。
 
-## 配達履歴と実績
+道路に沿った距離や所要時間ではない点に注意してください。
 
-配達を完了すると、配達員画面の「配達実績」に完了件数、最終配達時刻、直近20件の履歴が表示されます。状態、店舗・配送先名、開始日、終了日で絞り込めます。初期表示は従来どおり完了済みの配送だけです。
+## スコアの仕組み
 
-`GET /api/deliveries/history` はBearerトークンで認証した配達員本人のデータだけを返します。`status`（`ALL`、`ASSIGNED`、`PICKED_UP`、`DELIVERED`）、`query`、`from`、`to`をクエリパラメーターに指定できます。日付は日本時間を基準にし、不正な条件には`400 VALIDATION_ERROR`を返します。
+配達完了の基本点は100ポイントです。雨天は30ポイント、日本時間22:00以上または5:00未満は50ポイントを追加します。両方なら合計180ポイントです。
 
-## 配達スコア
+見込みスコアはオファー作成時に固定されます。その後に天候や時刻が変わっても、受諾済みの配達で獲得するポイントは変わりません。同じ完了操作を再送しても二重加点されません。
 
-配達を完了すると、基本の100ポイントを獲得します。雨天なら30ポイント、日本時間の22:00以上または5:00未満なら深夜ボーナス50ポイントを追加し、両方に該当すると合計180ポイントです。画面には「直近14日」と「累計」のスコア、直近20件の加点履歴を表示します。オファーには、完了時にもらえる見込みポイントと内訳も表示されます。
+## PostgreSQL版を動かす
 
-加点ルールはDBの`ScoreRule`へ保存します。オファー作成時に適用条件と見込みポイントを固定し、受諾時に`Assignment`へ引き継ぎ、完了時に`ScoreEvent`へ実績として保存します。そのため、オファーを表示した後に天候や時刻が変わっても獲得ポイントは変わりません。1つの配達に加点できるのは一度だけなので、同じ`Idempotency-Key`の再送や誤操作でポイントが二重に増えません。`GET /api/drivers/me/score`は、Bearerトークンで認証した本人のスコアと内訳だけを返します。
-
-### 天候シミュレーター
-
-現在はPC内で動かす学習・デモ用アプリなので、外部の気象APIには接続しません。画面の「天候シミュレーター」で晴れと雨を切り替えます。`POST /api/simulator/weather`でも`CLEAR`または`RAIN`を設定でき、Bearerトークンと`Idempotency-Key`が必要です。天候設定はアプリ全体に適用され、再起動すると晴れへ戻ります。すでに表示済みまたは受諾済みのオファーは変更せず、まだ表示していないオファーだけを再計算します。
-
-深夜判定はPCの現在時刻を日本時間へ変換して行います。日中に深夜ボーナスをデモする場合だけ、`.env`へ`SCORE_BONUS_SIMULATED_NOW`をISO 8601形式で指定してアプリを再起動します。通常利用では指定しません。
-
-## 現在地と距離
-
-勤務開始後に「現在地を更新する」を押すと、その時点で初めてブラウザが位置情報の許可を求めます。許可された場合だけ、`PUT /api/drivers/me/location`でログイン中の配達員本人の緯度・経度・精度を保存します。自動追跡やバックグラウンド取得は行いません。
-
-現在地は勤務中だけ保持し、退勤処理と同時にDBから削除します。最終更新から5分を超えた位置は古いものとして店舗までの計算に使いません。API応答や画面には現在地の緯度・経度をそのまま表示せず、鮮度、更新時刻、精度だけを返します。
-
-店舗までと店舗から届け先までの距離は、外部の地図・経路サービスへ送信せず、2点間の直線距離としてサーバー内で計算します。道路に沿った距離や所要時間ではありません。現在の店舗と届け先の座標はBKC周辺に置いた学習用の仮データで、実在する建物の正確な位置を示すものではありません。
-
-## 配達員ランキング
-
-画面には「今月」「直近14日」「全期間」の上位10名、およびログイン中の配達員本人の順位を表示します。月間ランキングは日本時間の毎月1日0時から翌月1日0時までに獲得したポイントを集計します。`GET /api/drivers/ranking`はBearerトークンで認証した場合だけ利用でき、配達員名・順位・スコア以外の認証情報や個人情報は返しません。
-
-同点は同じ順位にし、その次の順位を同点人数分だけ空ける競技順位方式です。たとえばスコア順が100、50、50、10の場合、順位は1位、2位、2位、4位になります。同点内の表示順は配達員IDの昇順で固定します。
-
-月間ランキングの1位には「月間チャンピオン」、2位には「月間準優勝」、3位には「月間トップ3」の称号を表示します。同点は全員が同じ順位と称号を得るため、3位以内の称号を持つ配達員が3名を超える場合があります。
-
-## 配達員の称号
-
-累計スコアに応じて、`ルーキー`（0ポイント）、`ブロンズ`（500ポイント）、`シルバー`（1500ポイント）、`ゴールド`（3000ポイント）の称号を表示します。現在の称号、次の称号までに必要なポイント、進捗率は`GET /api/drivers/me/score`から取得します。
-
-称号は既存の累計スコアから毎回計算するため、DBに新しいデータを保存する必要はありません。ちょうど境界のスコアに到達した時点で新しい称号へ切り替わります。
-
-## Dockerで起動する
-
-Dockerは、Node.js・Prisma・アプリ本体をひとつの実行単位（コンテナ）にまとめる仕組みです。Node.jsを個別に入れていないPCでも、Docker Desktopがあれば同じ起動手順を再現できます。
-
-Docker Desktopを起動した状態で、次を実行します。
-
-```powershell
-docker build -t deliveryflow-web .
-docker run --rm -p 3000:3000 -v deliveryflow-data:/data deliveryflow-web
-```
-
-ブラウザで <http://localhost:3000> を開きます。最初のコマンドはアプリ用イメージを作り、二つ目はコンテナを起動します。`-p 3000:3000` はPCのポート3000とコンテナ内のポート3000をつなぎます。
-
-`-v deliveryflow-data:/data` はSQLiteのデータをDockerの名前付きボリュームへ保存する指定です。コンテナを停止・削除しても配達データは残ります。開発データを最初からやり直す場合だけ、次のコマンドで削除できます。
-
-```powershell
-docker volume rm deliveryflow-data
-```
-
-コンテナ起動時に `prisma migrate deploy` がMigrationを適用します。これはDBの構造を、アプリが期待する最新の形にそろえる処理です。
-
-## PostgreSQLとDocker Compose
-
-SQLiteは1つのファイルを直接読むため、手軽なローカル開発や高速なテストに向いています。PostgreSQLは独立したDBサーバーとして動き、複数接続や同時更新を扱いやすいため、本番運用に向いています。
-
-このプロジェクトでは、学習・自動テスト用のSQLite構成を残しつつ、Docker Composeでは次の2サービスを起動します。
-
-- `db`: PostgreSQLサーバー
-- `app`: DeliveryFlowのNode.jsサーバー
-
-PostgreSQL用のローカル設定を作ります。
+Docker Desktopを起動し、設定ファイルを作成します。
 
 ```powershell
 Copy-Item .env.postgres.example .env.postgres
+docker compose --env-file .env.postgres up --build -d --wait
 ```
 
-`.env.postgres` の `POSTGRES_PASSWORD` はローカル開発専用です。本番環境では、ソース管理されないSecret管理機能から渡します。
-
-起動は次のコマンドです。
-
-```powershell
-docker compose --env-file .env.postgres up --build -d
-docker compose --env-file .env.postgres ps
-docker compose --env-file .env.postgres logs app
-```
-
-機能開発中はDocker Compose 2.22以降のWatchを使うと、長いコマンドを毎回入力せずに変更を自動反映できます。
-
-```powershell
-docker compose version
-npm run dev:postgres
-```
-
-このPowerShellを開いたままにすると、`public/`と`docs/`は保存時に同期され、`server.js`は同期後にアプリが再起動します。依存関係、Prisma、Docker関連ファイルの変更時はイメージが自動で再ビルドされます。Watchを終了するときは `Ctrl + C` を押します。Watchは開発用であり、PCやDocker Desktop自体を自動起動する機能ではありません。
-
-PostgreSQLのデータをPrisma Studioで確認する場合は、Watchを動かしたまま別のPowerShellで次を実行し、<http://localhost:5555> を開きます。StudioはWindows側のPrismaから、PC内だけに公開した `127.0.0.1:5433` 経由でPostgreSQLへ接続します。
-
-```powershell
-npm run studio:postgres
-```
-
-Prisma Studioを終了するときは、そのPowerShellで `Ctrl + C` を押します。画面からデータを直接変更・削除できるため、確認だけの場合は編集しないよう注意してください。
-
-ローカルのPostgreSQL接続は同じPCまたはDockerネットワーク内に限られるため、`DATABASE_URL`で `sslmode=disable` を指定します。PostgreSQLのホスト側ポートは `.env.postgres` の `POSTGRES_HOST_PORT` で変更でき、未指定時は5433です。将来クラウド上のPostgreSQLへ接続するときは、配備先の指示に従ってTLSを有効にします。
-
-ブラウザで <http://localhost:3106> を開きます。`db` のヘルスチェックが成功してから `app` が起動し、PostgreSQL用Migrationを自動適用します。
-
-停止する場合は次を実行します。
+ブラウザで <http://localhost:3106> を開きます。停止は次のコマンドです。
 
 ```powershell
 docker compose --env-file .env.postgres down
 ```
 
-通常の `down` では `postgres-data` ボリュームを削除しないため、次回起動時にもデータが残ります。`down -v` はDBデータも削除するコマンドなので、データを初期化すると明確に決めた場合だけ使用します。
+`down`だけならDBボリュームは残ります。`down -v`はDBデータも削除するため、明確に初期化したい場合以外は実行しないでください。
 
-SQLiteとPostgreSQLはSQLの一部の書き方が異なるため、SchemaとMigrationを分けています。`DATABASE_PROVIDER=sqlite` では従来のSQLite版、`DATABASE_PROVIDER=postgresql` ではPostgreSQL版を選択します。
-
-## 認証・セキュリティの基礎
-
-`POST /api/drivers` は配達員名と6桁のログインPINを登録し、配達員情報と43文字のランダムなアクセストークンを返します。画面はこのトークンをブラウザのローカルストレージに保存し、以後は `Authorization: Bearer <トークン>` として送信します。以前のような連番の配達員IDだけでは認証できません。
-
-DBにはトークンそのものを保存せず、SHA-256で変換したハッシュだけを保存します。PINも平文では保存せず、ランダムなソルトと計算負荷のある `scrypt` を使ったハッシュとして保存します。PINの総当たりを抑えるため、同じ接続元・配達員IDで5回失敗すると15分間ログインを拒否します。この回数はアプリ再起動でリセットされる学習用の簡易実装です。既存の配達員にはPINがないため、新方式を試す場合は画面から新しい配達員を登録してください。
-
-画面の「この端末からログアウトする」は、ブラウザのトークンを消すだけでなく、DBの `accessTokenHash` も削除します。再び利用するときは、画面に表示される配達員IDとPINを `POST /api/login` へ送り、新しいトークンを発行します。勤務中の状態だけが残るのを防ぐため、ログアウトは `OFFLINE` の場合だけ許可します。`IDLE` または `OFFERED` では先に退勤し、`BUSY` では配達完了後に退勤します。
-
-すべての応答には、画面の埋め込みや意図しないスクリプト実行を抑制するセキュリティヘッダーを追加しています。また、JSON本文は1MBまでに制限し、大きすぎる入力には `413 PAYLOAD_TOO_LARGE` を返します。これは学習用の基本対策であり、実サービスではHTTPS、短い有効期限、ログアウト時の失効、権限管理も追加します。
-
-## ログ・監視・負荷試験
-
-サーバーは各HTTPリクエストの時刻、リクエストID、メソッド、パス、状態コード、処理時間をJSON形式で標準出力へ記録します。認証ヘッダー、クエリ文字列、PIN、アクセストークンはログへ記録しません。
-
-- `GET /healthz`: アプリとデータベースに接続できるかを確認します。成功時は `{"status":"ok","database":"connected"}` を返します。
-- `GET /metrics`: 起動からのリクエスト数、5xxエラー数、平均応答時間、稼働秒数を返します。ローカル学習用の簡易メトリクスです。
-
-起動中のアプリに対して、標準機能だけで負荷試験できます。既定ではローカルの `/healthz` に100件を同時10件で送るため、外部サイトには送信できません。
+SQLiteだけをDockerで動かす場合は、ルートをビルドコンテキストに指定します。
 
 ```powershell
-npm run load-test
+docker build -f apps/server/Dockerfile -t deliveryflow-web .
+docker run --rm -p 3000:3000 -v deliveryflow-data:/data deliveryflow-web
 ```
 
-件数と同時実行数を変える例です。
+## テストとCI
 
 ```powershell
-$env:LOAD_TEST_REQUESTS = 500
-$env:LOAD_TEST_CONCURRENCY = 25
-npm run load-test
-Remove-Item Env:LOAD_TEST_REQUESTS, Env:LOAD_TEST_CONCURRENCY
-```
-
-## 最初に読むファイル
-
-- `public/index.html`: 画面の構造
-- `public/app.js`: ブラウザからAPIを呼ぶ処理
-- `server.js`: API、状態遷移、冪等性の処理
-- `location.js`: 位置の鮮度判定と直線距離の計算
-- `prisma/schema.prisma`: データベースの設計図
-- `docs/openapi.yaml`: APIの契約書
-
-## GitHubでの開発手順
-
-`.github/workflows/ci.yml` は、`main` へのpushとPull Requestで次を自動確認します。
-
-- Node.js 24で依存関係を再現できること
-- SQLiteのMigration、JavaScript構文、API自動テストが成功すること
-- Docker ComposeでPostgreSQL版をビルド・起動できること
-- 起動したPostgreSQL版で登録、認証、ログアウト、再ログインが成功すること
-
-これはCI（継続的インテグレーション）です。失敗した変更を `main` へ混ぜにくくします。クラウドへの自動配備を行うCDは、配備先とSecret管理を決める第10段階で追加します。
-
-作業ごとにブランチを作り、変更をコミットしてPull Requestで`main`へ統合します。
-
-```powershell
-git switch -c feature/機能名
-# ファイルを変更
 npm run check
-git add .
-git commit -m "実装内容を短く書く"
-git push -u origin feature/機能名
+npm test
 ```
 
-`.env`、SQLiteの実データ、`node_modules`、生成済みPrisma ClientはGitHubへ送信しません。
+テストは開発用DBを変更せず、毎回一時SQLite DBを作成します。配達状態、認証、冪等性、履歴、スコア、ランキング、位置情報の検証と退勤時削除を確認します。
+
+Pull RequestではGitHub Actionsが次を自動確認します。
+
+- Node.js 24での依存関係再現
+- SQLite Migration、構文チェック、全テスト
+- PostgreSQLコンテナのビルド、Migration、APIスモークテスト
+
+## 困ったとき
+
+### 直線距離が表示されない
+
+1. 最新の`main`をpullします。
+2. `npm run db:migrate`と`npm run db:generate`を実行します。
+3. アプリを再起動し、ブラウザを再読み込みします。
+4. 勤務開始後に「現在地を更新する」を押します。
+5. オファーを確認し、「配達詳細」の「現在地 → 店舗」を見ます。
+
+「店舗 → 届け先」は現在地がなくても表示されます。Docker版はコード変更後に`--build`を付けて再作成してください。
+
+### DB構造を変更した
+
+SQLiteとPostgreSQLのSchema・Migrationを両方更新し、両方のPrisma Clientを検証します。DBファイルや生成済みClientはGitへコミットしません。
+
+## 関連文書
+
+- [アーキテクチャとディレクトリ構成](docs/architecture.md)
+- [API仕様](docs/openapi.yaml)
+- [実装状況とロードマップ](docs/PROJECT_STATUS.md)

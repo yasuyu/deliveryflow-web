@@ -57,6 +57,9 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Structured logs, health checks, and safe metrics
 - Load-test script and PostgreSQL container smoke test
 - Compose Watch support
+- Organize browser and server code under `apps/`, with tests and feature modules beside the server
+- Keep `prisma/` at the repository root so existing local SQLite data remains compatible
+- Document directory responsibilities and change locations in `docs/architecture.md`
 
 ### Driver location and distance
 
@@ -77,6 +80,8 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - PR #6: repository guidance and project status
 - PR #7: driver rankings and ranking UI
 - PR #8: driver titles and monthly ranking awards
+- PR #9: score bonuses and local weather simulation
+- PR #10: driver location and straight-line distance
 
 ## Partially implemented
 
@@ -101,7 +106,7 @@ Suggested branch: `feature/route-map`
 
 ## Verification baseline
 
-- PR #9 CI completed successfully and was merged.
+- PR #10 CI completed successfully and was merged.
 - CI covered the SQLite test suite and PostgreSQL container smoke test.
 - Post-merge syntax checks and automated tests succeeded.
 

@@ -16,7 +16,9 @@ services:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
     depends_on:
       db:
         condition: service_healthy
@@ -30,17 +32,11 @@ services:
     develop:
       watch:
         - action: sync+restart
-          path: ./server.js
-          target: /app/server.js
-        - action: sync+restart
-          path: ./score-bonuses.js
-          target: /app/score-bonuses.js
-        - action: sync+restart
-          path: ./location.js
-          target: /app/location.js
+          path: ./apps/server/src
+          target: /app/apps/server/src
         - action: sync
-          path: ./public
-          target: /app/public
+          path: ./apps/web/public
+          target: /app/apps/web/public
         - action: sync
           path: ./docs
           target: /app/docs
@@ -53,9 +49,9 @@ services:
         - action: rebuild
           path: ./prisma.config.ts
         - action: rebuild
-          path: ./Dockerfile
+          path: ./apps/server/Dockerfile
         - action: rebuild
-          path: ./docker-entrypoint.sh
+          path: ./apps/server/docker-entrypoint.sh
 
 volumes:
   postgres-data:
