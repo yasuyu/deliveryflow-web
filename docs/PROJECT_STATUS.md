@@ -1,6 +1,6 @@
 # DeliveryFlow Web project status
 
-Last reviewed: 2026-09-13
+Last reviewed: 2026-09-14
 
 This file is a navigation aid. The current code, migrations, OpenAPI document, and automated tests are the source of truth when this summary differs from the implementation.
 
@@ -9,7 +9,7 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Run the application on the user's own PC using free local tooling.
 - Use Docker Compose with PostgreSQL as the production-like verification environment.
 - External deployment and multi-server infrastructure are deferred until the application needs to be used by other people over the internet.
-- Continue the gamification roadmap next.
+- Continue with local-first driver location and distance features next.
 
 ## Completed
 
@@ -40,6 +40,11 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Derive Rookie, Bronze, Silver, and Gold titles from cumulative score
 - Return the current title, next title, points needed, and progress from `GET /api/drivers/me/score`
 - Display title progress in the web UI and cover score boundaries in automated tests
+- Add 30-point rain and 50-point Japan-time late-night bonuses, including stacking
+- Freeze the score estimate and breakdown when an offer is created and preserve it through completion
+- Provide a local clear/rain simulator without an external weather service
+- Display the bonus breakdown before acceptance, during delivery, and in completed score history
+- Cover rule selection, late-night boundaries, saved snapshots, and duplicate-award prevention
 - SQLite and PostgreSQL migrations, OpenAPI updates, and automated tests
 
 ### Platform and quality
@@ -59,6 +64,7 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - PR #5: driver score tracking and UI
 - PR #6: repository guidance and project status
 - PR #7: driver rankings and ranking UI
+- PR #8: driver titles and monthly ranking awards
 
 ## Partially implemented
 
@@ -66,14 +72,13 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 
 ## Recommended next feature
 
-### Score bonuses
+### GPS location and distance
 
-- Add weather, late-night, and other documented bonus rules
-- Show the bonus breakdown before accepting an offer and after completion
-- Preserve one-time awards and Idempotency-Key protection
-- Add rule-selection, boundary, and duplicate-award tests
+- Capture the driver's location with explicit permission
+- Calculate distance to pickup and drop-off points
+- Keep location data local and document retention behavior before adding maps
 
-Suggested branch: `feature/score-bonuses`
+Suggested branch: `feature/driver-location`
 
 ## Later roadmap
 
@@ -84,7 +89,7 @@ Suggested branch: `feature/score-bonuses`
 
 ## Verification baseline
 
-- PR #7 CI completed successfully.
+- PR #8 CI completed successfully.
 - CI covered the SQLite test suite and PostgreSQL container smoke test.
 - Post-merge syntax checks and automated tests succeeded.
 

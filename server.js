@@ -3,6 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { createHash, randomBytes, randomUUID, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
 const { promisify } = require('util');
+const {
+  buildScoreSnapshot,
+  parseBreakdown,
+  scoreRuleCodes,
+} = require('./score-bonuses');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -22,8 +27,8 @@ const driverTitles = [
   { code: 'SILVER', name: 'シルバー', minimumScore: 1500 },
   { code: 'GOLD', name: 'ゴールド', minimumScore: 3000 },
 ];
-const completedDeliveryScoreCode = 'DELIVERY_COMPLETED';
 const loginFailures = new Map();
+let simulatedWeatherCondition = 'CLEAR';
 const startedAt = Date.now();
 const metrics = {
   requestCount: 0,
@@ -58,6 +63,16 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 const port = positiveIntegerFromEnv('PORT', 3000);
 const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 120) * 1000;
+const simulatedScoreDate = process.env.SCORE_BONUS_SIMULATED_NOW
+  ? new Date(process.env.SCORE_BONUS_SIMULATED_NOW)
+  : null;
+if (simulatedScoreDate && Number.isNaN(simulatedScoreDate.getTime())) {
+  throw new Error('SCORE_BONUS_SIMULATED_NOW must be an ISO 8601 date-time');
+}
+
+function scoreEvaluationTime() {
+  return simulatedScoreDate ? new Date(simulatedScoreDate) : new Date();
+}
 
 class ApiError extends Error {
   constructor(status, code, message) {
@@ -285,6 +300,11 @@ async function createNextOffer(driver, client = prisma) {
 
   const store = await client.store.findFirst();
   const number = (await client.order.count()) + 1;
+  const rules = await client.scoreRule.findMany();
+  const scoreSnapshot = buildScoreSnapshot(rules, {
+    weatherCondition: simulatedWeatherCondition,
+    at: scoreEvaluationTime(),
+  });
   const order = await client.order.create({
     data: {
       storeId: store.id,
@@ -298,6 +318,8 @@ async function createNextOffer(driver, client = prisma) {
       driverId: driver.id,
       orderId: order.id,
       expiresAt: new Date(Date.now() + offerTtlMilliseconds),
+      estimatedPoints: scoreSnapshot.estimatedPoints,
+      scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
     },
   });
 }
@@ -334,15 +356,18 @@ async function expireOffers() {
 }
 
 async function ensureSeed() {
-  await prisma.scoreRule.upsert({
-    where: { code: completedDeliveryScoreCode },
-    update: {},
-    create: {
-      code: completedDeliveryScoreCode,
-      label: '配達完了',
-      points: 100,
-    },
-  });
+  const defaultRules = [
+    { code: scoreRuleCodes.completed, label: '配達完了', points: 100 },
+    { code: scoreRuleCodes.rain, label: '雨天ボーナス', points: 30 },
+    { code: scoreRuleCodes.lateNight, label: '深夜ボーナス', points: 50 },
+  ];
+  for (const rule of defaultRules) {
+    await prisma.scoreRule.upsert({
+      where: { code: rule.code },
+      update: {},
+      create: rule,
+    });
+  }
 
   let driver = await currentDriver();
   if (!driver) {
@@ -379,13 +404,13 @@ async function dashboard(driverId) {
     where: { driverId: driver.id, deliveredAt: null },
     include: { order: { include: { store: true } } },
   });
-  const scoreRule = offer
-    ? await prisma.scoreRule.findUnique({ where: { code: completedDeliveryScoreCode } })
-    : null;
   return {
     driver: publicDriver(await prisma.driver.findUnique({ where: { id: driverId } })),
-    offer: offer ? { ...offer, estimatedPoints: scoreRule?.active ? scoreRule.points : 0 } : null,
-    assignment,
+    offer: offer ? { ...offer, scoreBreakdown: parseBreakdown(offer.scoreBreakdown) } : null,
+    assignment: assignment
+      ? { ...assignment, scoreBreakdown: parseBreakdown(assignment.scoreBreakdown) }
+      : null,
+    simulator: { weatherCondition: simulatedWeatherCondition },
   };
 }
 
@@ -429,7 +454,36 @@ async function driverScore(driverId) {
     lifetimeScore: driver.score,
     windowDays: scoreWindowDays,
     title: buildDriverTitle(driver.score),
-    recentEvents,
+    recentEvents: recentEvents.map((event) => ({
+      ...event,
+      breakdown: parseBreakdown(event.breakdown),
+    })),
+  };
+}
+
+async function updateSimulatorWeather(condition) {
+  if (!['CLEAR', 'RAIN'].includes(condition)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'conditionはCLEARまたはRAINを指定してください');
+  }
+  simulatedWeatherCondition = condition;
+
+  const rules = await prisma.scoreRule.findMany();
+  const scoreSnapshot = buildScoreSnapshot(rules, {
+    weatherCondition: simulatedWeatherCondition,
+    at: scoreEvaluationTime(),
+  });
+  await prisma.offer.updateMany({
+    where: { status: 'PENDING', driver: { status: 'IDLE' } },
+    data: {
+      estimatedPoints: scoreSnapshot.estimatedPoints,
+      scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
+    },
+  });
+  return {
+    weatherCondition: simulatedWeatherCondition,
+    message: condition === 'RAIN'
+      ? '雨天に切り替えました。未表示のオファーから雨天ボーナスが反映されます。'
+      : '晴れに切り替えました。未表示のオファーから雨天ボーナスが外れます。',
   };
 }
 
@@ -665,7 +719,7 @@ async function showCurrentOffer(driver) {
     where: { id: driver.id },
     data: { status: 'OFFERED' },
   });
-  return offer;
+  return { ...offer, scoreBreakdown: parseBreakdown(offer.scoreBreakdown) };
 }
 
 async function acceptOffer(driver, offerId) {
@@ -706,7 +760,12 @@ async function acceptOffer(driver, offerId) {
       data: { status: 'BUSY' },
     });
     await transaction.assignment.create({
-      data: { orderId: offer.orderId, driverId: driver.id },
+      data: {
+        orderId: offer.orderId,
+        driverId: driver.id,
+        estimatedPoints: offer.estimatedPoints,
+        scoreBreakdown: offer.scoreBreakdown,
+      },
     });
     return offer;
   });
@@ -793,25 +852,40 @@ async function completeAssignment(driver, assignmentId) {
       throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる注文状態ではありません');
     }
 
-    const rule = await transaction.scoreRule.findUnique({
-      where: { code: completedDeliveryScoreCode },
-    });
-    if (!rule?.active) {
-      throw new ApiError(503, 'SCORE_RULE_UNAVAILABLE', '配達完了の加点ルールを利用できません');
+    let breakdown = parseBreakdown(assignment.scoreBreakdown);
+    let awardedPoints = assignment.estimatedPoints;
+    if (!breakdown.length) {
+      try {
+        const fallback = buildScoreSnapshot(await transaction.scoreRule.findMany(), {
+          weatherCondition: 'CLEAR',
+          at: new Date('2000-01-01T12:00:00+09:00'),
+        });
+        breakdown = fallback.breakdown;
+        awardedPoints = fallback.estimatedPoints;
+      } catch {
+        throw new ApiError(503, 'SCORE_RULE_UNAVAILABLE', '配達完了の加点ルールを利用できません');
+      }
     }
+    const reason = breakdown.map((item) => item.label).join(' + ');
     const event = await transaction.scoreEvent.create({
       data: {
         driverId: driver.id,
         assignmentId: assignment.id,
-        points: rule.points,
-        reason: rule.label,
+        points: awardedPoints,
+        reason,
+        breakdown: JSON.stringify(breakdown),
       },
     });
     await transaction.driver.update({
       where: { id: driver.id },
-      data: { status: 'IDLE', score: { increment: rule.points } },
+      data: { status: 'IDLE', score: { increment: awardedPoints } },
     });
-    return { points: event.points, reason: event.reason, createdAt: event.createdAt };
+    return {
+      points: event.points,
+      reason: event.reason,
+      breakdown,
+      createdAt: event.createdAt,
+    };
   });
   await createNextOffer(driver);
   return scoreAward;
@@ -915,6 +989,12 @@ async function handle(request, response) {
     return idempotentResponse(async () => {
       await logoutDriver(driver);
       return { message: 'ログアウトしました' };
+    });
+  }
+  if (request.method === 'POST' && url.pathname === '/api/simulator/weather') {
+    return idempotentResponse(async () => {
+      const { condition } = await readJsonBody(request);
+      return updateSimulatorWeather(condition);
     });
   }
 

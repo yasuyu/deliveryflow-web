@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.6.0
+  version: 0.7.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -45,7 +45,35 @@ paths:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
-        '200': { description: 現在のダッシュボード状態 }
+        '200': { description: 現在のダッシュボード状態。オファーまたは担当配達には固定済みの見込みスコアと内訳を含み、現在のシミュレーター天候も返す }
+  /api/simulator/weather:
+    post:
+      summary: PC内の天候シミュレーターを晴れまたは雨へ切り替える
+      description: 未表示の保留オファーだけを再計算する。表示済みまたは受諾済みのオファーに保存したスコア内訳は変更しない。アプリ再起動時はCLEARへ戻る。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [condition]
+              properties:
+                condition: { type: string, enum: [CLEAR, RAIN] }
+      responses:
+        '200':
+          description: 天候の切替成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [weatherCondition, message]
+                properties:
+                  weatherCondition: { type: string, enum: [CLEAR, RAIN] }
+                  message: { type: string }
+        '400': { description: 天候条件が不正 }
+        '401': { description: Bearerトークンが不正 }
   /api/deliveries/history:
     get:
       summary: ログイン中の配達員の完了実績を新しい順に最大20件取得する
@@ -94,7 +122,18 @@ paths:
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
-        '200': { description: オファー確認成功 }
+        '200':
+          description: オファー確認成功。estimatedPointsとscoreBreakdownに完了時の見込み加点を返す
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ScoreSnapshot'
+                  - type: object
+                    required: [id, status]
+                    properties:
+                      id: { type: integer }
+                      status: { type: string, enum: [PENDING] }
         '404': { description: オファーなし }
   /api/logout:
     post:
@@ -143,7 +182,7 @@ paths:
   /api/assignments/{assignmentId}/complete:
     post:
       summary: 配達を完了する PICKED_UP to DELIVERED
-      description: 配達完了を記録し、設定中のScoreRuleに従って一度だけ加点する
+      description: 配達完了を記録し、オファー作成時に固定したScoreRuleの内訳に従って一度だけ加点する
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - name: assignmentId
@@ -151,7 +190,16 @@ paths:
           required: true
           schema: { type: integer }
       responses:
-        '200': { description: 配達完了後のダッシュボード状態と今回の加点内容 }
+        '200':
+          description: 配達完了後のダッシュボード状態と、基本点・雨天・深夜を含む今回の加点内訳
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [driver, scoreAward]
+                properties:
+                  driver: { type: object }
+                  scoreAward: { $ref: '#/components/schemas/ScoreAward' }
 components:
   parameters:
     IdempotencyKey:
@@ -168,6 +216,31 @@ components:
       scheme: bearer
       description: POST /api/driversで発行された推測困難なアクセス用トークンを指定する。DBにはトークン本体ではなくSHA-256ハッシュだけを保存する。
   schemas:
+    ScoreSnapshot:
+      type: object
+      required: [estimatedPoints, scoreBreakdown]
+      properties:
+        estimatedPoints: { type: integer, example: 130 }
+        scoreBreakdown:
+          type: array
+          items: { $ref: '#/components/schemas/ScoreBreakdownItem' }
+    ScoreAward:
+      type: object
+      required: [points, reason, breakdown, createdAt]
+      properties:
+        points: { type: integer, example: 130 }
+        reason: { type: string, example: 配達完了 + 雨天ボーナス }
+        breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/ScoreBreakdownItem' }
+        createdAt: { type: string, format: date-time }
+    ScoreBreakdownItem:
+      type: object
+      required: [code, label, points]
+      properties:
+        code: { type: string, example: WEATHER_RAIN }
+        label: { type: string, example: 雨天ボーナス }
+        points: { type: integer, example: 30 }
     Error:
       type: object
       required: [code, message]
