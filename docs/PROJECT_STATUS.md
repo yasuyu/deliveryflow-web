@@ -60,6 +60,7 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Organize browser and server code under `apps/`, with tests and feature modules beside the server
 - Keep `prisma/` at the repository root so existing local SQLite data remains compatible
 - Document directory responsibilities and change locations in `docs/architecture.md`
+- Document state transitions, data relationships, and architectural decisions in dedicated guides
 
 ### Driver location and distance
 
