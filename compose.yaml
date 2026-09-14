@@ -32,6 +32,9 @@ services:
         - action: sync+restart
           path: ./server.js
           target: /app/server.js
+        - action: sync+restart
+          path: ./score-bonuses.js
+          target: /app/score-bonuses.js
         - action: sync
           path: ./public
           target: /app/public

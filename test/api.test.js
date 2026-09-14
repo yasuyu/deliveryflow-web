@@ -91,6 +91,7 @@ before(async () => {
       DATABASE_URL: databaseUrl,
       PORT: String(port),
       OFFER_TTL_SECONDS: '120',
+      SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -132,6 +133,10 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
   assert.equal(offerResult.body.status, 'PENDING');
+  assert.equal(offerResult.body.estimatedPoints, 100);
+  assert.deepEqual(offerResult.body.scoreBreakdown, [
+    { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100 },
+  ]);
 
   const accepted = await authenticatedPost(`/api/offers/${offerResult.body.id}/accept`, 'accept-offer');
   assert.equal(accepted.status, 200);
@@ -151,6 +156,9 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(completed.body.assignment, null);
   assert.equal(completed.body.scoreAward.points, 100);
   assert.equal(completed.body.scoreAward.reason, '配達完了');
+  assert.deepEqual(completed.body.scoreAward.breakdown, [
+    { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100 },
+  ]);
 
   const repeatedCompletion = await authenticatedPost(`/api/assignments/${assignmentId}/complete`, 'complete-order');
   assert.equal(repeatedCompletion.status, 200);
@@ -165,6 +173,7 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(score.body.windowDays, 14);
   assert.equal(score.body.recentEvents.length, 1);
   assert.equal(score.body.recentEvents[0].points, 100);
+  assert.deepEqual(score.body.recentEvents[0].breakdown, completed.body.scoreAward.breakdown);
   assert.equal(score.body.recentEvents[0].assignment.order.status, 'DELIVERED');
 
   const history = await request('/api/deliveries/history', {
@@ -350,6 +359,14 @@ test('認証なしでは配達員用APIを利用できない', async () => {
   const ranking = await request('/api/drivers/ranking');
   assert.equal(ranking.status, 401);
   assert.equal(ranking.body.code, 'UNAUTHORIZED');
+
+  const weather = await request('/api/simulator/weather', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'unauthorized-weather' },
+    body: JSON.stringify({ condition: 'RAIN' }),
+  });
+  assert.equal(weather.status, 401);
+  assert.equal(weather.body.code, 'UNAUTHORIZED');
 });
 
 test('監視用エンドポイントはDB接続状況と安全なメトリクスを返す', async () => {
@@ -514,4 +531,54 @@ test('PINを5回間違えるとログインを一時的に拒否する', async (
   });
   assert.equal(blockedLogin.status, 429);
   assert.equal(blockedLogin.body.code, 'TOO_MANY_LOGIN_ATTEMPTS');
+});
+
+test('雨天ボーナスの見込みと完了後の内訳を固定し二重加点しない', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '雨天ボーナス確認', pin: '135790' }),
+  });
+  const token = registration.body.accessToken;
+  const post = (pathname, key, body = null) => request(pathname, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': key,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  const weather = await post('/api/simulator/weather', 'rain-weather', { condition: 'RAIN' });
+  assert.equal(weather.status, 200);
+  assert.equal(weather.body.weatherCondition, 'RAIN');
+
+  await post('/api/shifts/start', 'rain-start');
+  const offer = await post('/api/offers/current', 'rain-offer');
+  assert.equal(offer.body.estimatedPoints, 130);
+  assert.deepEqual(offer.body.scoreBreakdown.map((item) => item.code), [
+    'DELIVERY_COMPLETED',
+    'WEATHER_RAIN',
+  ]);
+
+  const accepted = await post(`/api/offers/${offer.body.id}/accept`, 'rain-accept');
+  const assignmentId = accepted.body.assignment.id;
+  assert.equal(accepted.body.assignment.estimatedPoints, 130);
+
+  await post('/api/simulator/weather', 'rain-clear-after-accept', { condition: 'CLEAR' });
+  await post(`/api/assignments/${assignmentId}/pickup`, 'rain-pickup');
+  const completed = await post(`/api/assignments/${assignmentId}/complete`, 'rain-complete');
+  assert.equal(completed.body.scoreAward.points, 130);
+  assert.deepEqual(completed.body.scoreAward.breakdown, offer.body.scoreBreakdown);
+
+  const repeated = await post(`/api/assignments/${assignmentId}/complete`, 'rain-complete');
+  assert.deepEqual(repeated.body, completed.body);
+
+  const score = await request('/api/drivers/me/score', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(score.body.lifetimeScore, 130);
+  assert.equal(score.body.recentEvents.length, 1);
+  assert.deepEqual(score.body.recentEvents[0].breakdown, offer.body.scoreBreakdown);
 });

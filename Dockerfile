@@ -19,6 +19,7 @@ RUN DATABASE_PROVIDER=postgresql \
     node node_modules/prisma/build/index.js generate
 
 COPY --chown=node:node server.js ./
+COPY --chown=node:node score-bonuses.js ./
 COPY --chown=node:node public ./public
 COPY --chown=node:node docs ./docs
 COPY docker-entrypoint.sh ./

@@ -32,6 +32,9 @@ const lifetimeRankingList = document.querySelector('#lifetimeRanking');
 const currentRankingMe = document.querySelector('#currentRankingMe');
 const lifetimeRankingMe = document.querySelector('#lifetimeRankingMe');
 const monthlyRankingMe = document.querySelector('#monthlyRankingMe');
+const weatherSimulatorForm = document.querySelector('#weatherSimulatorForm');
+const weatherCondition = document.querySelector('#weatherCondition');
+const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
@@ -67,14 +70,16 @@ function setLoading(loading) {
   actions.setAttribute('aria-busy', String(loading));
 }
 
-async function request(url) {
+async function request(url, body = null) {
   const idempotencyKey = crypto.randomUUID();
   const options = {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${driverToken}`,
       'Idempotency-Key': idempotencyKey,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   };
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -102,7 +107,15 @@ function formatJapanTime(value) {
   }).format(new Date(value));
 }
 
-function showOrder(order, extraLabel, extraValue, estimatedPoints = null) {
+function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
+  if (estimatedPoints === null) return '';
+  const rows = scoreBreakdown
+    .map((item) => `<li><span>${item.label}</span><strong>+${item.points} pt</strong></li>`)
+    .join('');
+  return `<dt>見込みスコア</dt><dd class="score-estimate"><strong>+${estimatedPoints}ポイント</strong><ul>${rows}</ul></dd>`;
+}
+
+function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = []) {
   card.classList.remove('hidden');
   detail.innerHTML = `<dl>
     <dt>店舗</dt><dd>${order.store.name}</dd>
@@ -110,7 +123,7 @@ function showOrder(order, extraLabel, extraValue, estimatedPoints = null) {
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
     <dt>注文の状態</dt><dd>${order.status}</dd>
     <dt>${extraLabel}</dt><dd>${extraValue}</dd>
-    ${estimatedPoints === null ? '' : `<dt>見込みスコア</dt><dd>+${estimatedPoints}ポイント</dd>`}
+    ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
   </dl>`;
 }
 
@@ -135,13 +148,18 @@ function renderScore() {
     const reason = document.createElement('strong');
     const destination = document.createElement('span');
     const points = document.createElement('b');
+    const breakdown = document.createElement('span');
     const time = document.createElement('time');
     reason.textContent = event.reason;
     destination.textContent = event.assignment.order.dropoffName;
     points.textContent = `+${event.points}`;
+    breakdown.className = 'score-event-breakdown';
+    breakdown.textContent = event.breakdown?.length
+      ? event.breakdown.map((item) => `${item.label} +${item.points}`).join(' / ')
+      : event.reason;
     time.dateTime = event.createdAt;
     time.textContent = formatJapanTime(event.createdAt);
-    item.append(reason, destination, points, time);
+    item.append(reason, destination, points, time, breakdown);
     scoreEvents.append(item);
   }
 }
@@ -223,6 +241,9 @@ function render() {
   renderScore();
   renderRanking();
   renderHistory();
+  const currentWeather = state.simulator?.weatherCondition || 'CLEAR';
+  weatherCondition.value = currentWeather;
+  weatherSimulatorStatus.textContent = `現在: ${currentWeather === 'RAIN' ? '雨' : '晴れ'}`;
 
   if (state.driver.status === 'OFFLINE') {
     actions.innerHTML = button('稼働を開始する', 'start');
@@ -240,11 +261,18 @@ function render() {
       'オファー期限',
       state.offer.expiresAt ? formatJapanTime(state.offer.expiresAt) : '期限なし',
       state.offer.estimatedPoints,
+      state.offer.scoreBreakdown,
     );
   }
   if (state.assignment) {
     const order = state.assignment.order;
-    showOrder(order, '受諾時刻', formatJapanTime(state.assignment.acceptedAt));
+    showOrder(
+      order,
+      '受諾時刻',
+      formatJapanTime(state.assignment.acceptedAt),
+      state.assignment.estimatedPoints,
+      state.assignment.scoreBreakdown,
+    );
     if (!state.assignment.pickedUpAt) {
       actions.innerHTML = button('荷物を受け取った', `pickup:${state.assignment.id}`);
     } else if (!state.assignment.deliveredAt) {
@@ -397,11 +425,28 @@ actions.addEventListener('click', async (event) => {
     if (action.startsWith('pickup:')) await request(`/api/assignments/${action.split(':')[1]}/pickup`);
     if (action.startsWith('complete:')) actionResult = await request(`/api/assignments/${action.split(':')[1]}/complete`);
     await refresh({ preserveMessage: true });
+    const awardDetails = actionResult?.scoreAward?.breakdown
+      ?.map((item) => `${item.label} +${item.points}`).join(' / ');
     setMessage(actionResult?.scoreAward
-      ? `${actionName}が完了しました。${actionResult.scoreAward.reason}で +${actionResult.scoreAward.points}ポイント獲得しました。`
+      ? `${actionName}が完了しました。${awardDetails}、合計 +${actionResult.scoreAward.points}ポイント獲得しました。`
       : `${actionName}が完了しました。`, 'success');
   } catch (error) {
     setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+});
+
+weatherSimulatorForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setLoading(true);
+  setMessage('天候を更新しています。', 'loading');
+  try {
+    const result = await request('/api/simulator/weather', { condition: weatherCondition.value });
+    await refresh({ preserveMessage: true });
+    setMessage(result.message, 'success');
+  } catch (error) {
+    setMessage(`天候の更新に失敗しました。${error.message}`, 'error');
   } finally {
     setLoading(false);
   }

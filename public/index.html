@@ -39,6 +39,15 @@
       </section>
       <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
       <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
+      <section class="card simulator-card">
+        <p class="eyebrow">LOCAL WEATHER SIMULATOR</p><h2>天候シミュレーター</h2>
+        <p>PC内のデモ用設定です。切り替え後、まだ表示していないオファーから雨天ボーナスへ反映します。</p>
+        <form id="weatherSimulatorForm" class="weather-simulator">
+          <label>現在の天候<select id="weatherCondition" name="condition"><option value="CLEAR">晴れ</option><option value="RAIN">雨</option></select></label>
+          <button type="submit">天候を反映する</button>
+        </form>
+        <p id="weatherSimulatorStatus" class="simulator-status">現在: 晴れ</p>
+      </section>
       <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>配達詳細</h2><div id="deliveryDetail"></div></section>
       <section class="card score-card">
         <p class="eyebrow">DRIVER SCORE</p><h2>配達スコア</h2>
