@@ -70,6 +70,9 @@ deliveryflow-web/
 ├─ prisma/                           DB SchemaとMigration
 ├─ docs/
 │  ├─ architecture.md               構成と責務の詳しい説明
+│  ├─ workflow.md                   状態遷移と操作条件
+│  ├─ data-model.md                 DBモデルと保存方針
+│  ├─ decisions.md                  主な設計判断と理由
 │  ├─ openapi.yaml                  APIの契約書
 │  └─ PROJECT_STATUS.md             実装状況と次の候補
 └─ scripts/                          負荷試験・DB確認ツール
@@ -184,5 +187,8 @@ SQLiteとPostgreSQLのSchema・Migrationを両方更新し、両方のPrisma Cli
 ## 関連文書
 
 - [アーキテクチャとディレクトリ構成](docs/architecture.md)
+- [配達ワークフローと状態遷移](docs/workflow.md)
+- [データモデルと保存方針](docs/data-model.md)
+- [設計判断とその理由](docs/decisions.md)
 - [API仕様](docs/openapi.yaml)
 - [実装状況とロードマップ](docs/PROJECT_STATUS.md)

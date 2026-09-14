@@ -49,6 +49,9 @@ deliveryflow-web/
 ├─ generated/                           Prisma生成物（Git管理外）
 ├─ docs/
 │  ├─ architecture.md
+│  ├─ workflow.md
+│  ├─ data-model.md
+│  ├─ decisions.md
 │  ├─ openapi.yaml
 │  └─ PROJECT_STATUS.md
 └─ scripts/
@@ -100,6 +103,9 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 - `openapi.yaml`: APIが受け取る値と返す値の契約
 - `PROJECT_STATUS.md`: 完了済み機能、未実装部分、次の候補
 - `architecture.md`: この文書。配置と責務の判断基準
+- `workflow.md`: Driver・Order・Offer・Assignmentの状態遷移と操作条件
+- `data-model.md`: Prismaモデルの関係、制約、データのライフサイクル
+- `decisions.md`: 採用した設計、その背景、利点と制約
 
 ### `scripts`
 
