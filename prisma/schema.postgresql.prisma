@@ -28,6 +28,10 @@ model Driver {
   status         String       @default("OFFLINE")
   shiftStartedAt DateTime?
   score          Int          @default(0)
+  latitude       Float?
+  longitude      Float?
+  locationAccuracyMeters Float?
+  locationUpdatedAt DateTime?
   offers         Offer[]
   assignments    Assignment[]
   scoreEvents    ScoreEvent[]
@@ -61,6 +65,8 @@ model Store {
   id      Int     @id @default(autoincrement())
   name    String
   address String
+  latitude Float @default(34.981)
+  longitude Float @default(135.962)
   orders  Order[]
 }
 
@@ -69,6 +75,8 @@ model Order {
   storeId     Int
   pickupName  String
   dropoffName String
+  dropoffLatitude Float @default(34.978)
+  dropoffLongitude Float @default(135.968)
   status      String      @default("CREATED")
   store       Store       @relation(fields: [storeId], references: [id])
   offers      Offer[]

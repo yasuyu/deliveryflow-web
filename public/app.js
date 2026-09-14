@@ -35,6 +35,8 @@ const monthlyRankingMe = document.querySelector('#monthlyRankingMe');
 const weatherSimulatorForm = document.querySelector('#weatherSimulatorForm');
 const weatherCondition = document.querySelector('#weatherCondition');
 const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus');
+const updateLocationButton = document.querySelector('#updateLocation');
+const locationStatusElement = document.querySelector('#locationStatus');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
@@ -107,6 +109,11 @@ function formatJapanTime(value) {
   }).format(new Date(value));
 }
 
+function formatDistance(meters) {
+  if (meters === null || meters === undefined) return '現在地を更新すると表示します';
+  return meters < 1000 ? `約${meters}m` : `約${(meters / 1000).toFixed(1)}km`;
+}
+
 function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
   if (estimatedPoints === null) return '';
   const rows = scoreBreakdown
@@ -115,13 +122,15 @@ function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
   return `<dt>見込みスコア</dt><dd class="score-estimate"><strong>+${estimatedPoints}ポイント</strong><ul>${rows}</ul></dd>`;
 }
 
-function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = []) {
+function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = [], routeDistance = {}) {
   card.classList.remove('hidden');
   detail.innerHTML = `<dl>
     <dt>店舗</dt><dd>${order.store.name}</dd>
     <dt>受取先</dt><dd>${order.pickupName}</dd>
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
     <dt>注文の状態</dt><dd>${order.status}</dd>
+    <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
+    <dt>店舗 → 届け先</dt><dd>${formatDistance(routeDistance.pickupToDropoffMeters)}（直線）</dd>
     <dt>${extraLabel}</dt><dd>${extraValue}</dd>
     ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
   </dl>`;
@@ -244,6 +253,16 @@ function render() {
   const currentWeather = state.simulator?.weatherCondition || 'CLEAR';
   weatherCondition.value = currentWeather;
   weatherSimulatorStatus.textContent = `現在: ${currentWeather === 'RAIN' ? '雨' : '晴れ'}`;
+  updateLocationButton.disabled = isLoading || state.driver.status === 'OFFLINE';
+  updateLocationButton.dataset.alwaysDisabled = String(state.driver.status === 'OFFLINE');
+  const locationLabels = {
+    MISSING: '現在地はまだ保存されていません。',
+    STALE: `現在地が古くなっています（最終更新: ${state.location.updatedAt ? formatJapanTime(state.location.updatedAt) : '-'}）。`,
+    FRESH: `現在地を利用できます（最終更新: ${formatJapanTime(state.location.updatedAt)}、精度 約${Math.round(state.location.accuracyMeters || 0)}m）。`,
+  };
+  locationStatusElement.textContent = state.driver.status === 'OFFLINE'
+    ? '退勤中のため現在地は保持していません。'
+    : locationLabels[state.location.status];
 
   if (state.driver.status === 'OFFLINE') {
     actions.innerHTML = button('稼働を開始する', 'start');
@@ -262,6 +281,7 @@ function render() {
       state.offer.expiresAt ? formatJapanTime(state.offer.expiresAt) : '期限なし',
       state.offer.estimatedPoints,
       state.offer.scoreBreakdown,
+      state.offer.routeDistance,
     );
   }
   if (state.assignment) {
@@ -272,6 +292,7 @@ function render() {
       formatJapanTime(state.assignment.acceptedAt),
       state.assignment.estimatedPoints,
       state.assignment.scoreBreakdown,
+      state.assignment.routeDistance,
     );
     if (!state.assignment.pickedUpAt) {
       actions.innerHTML = button('荷物を受け取った', `pickup:${state.assignment.id}`);
@@ -449,6 +470,43 @@ weatherSimulatorForm.addEventListener('submit', async (event) => {
     setMessage(`天候の更新に失敗しました。${error.message}`, 'error');
   } finally {
     setLoading(false);
+  }
+});
+
+updateLocationButton.addEventListener('click', async () => {
+  if (!navigator.geolocation || isLoading) {
+    setMessage('このブラウザでは位置情報を利用できません。', 'error');
+    return;
+  }
+  setLoading(true);
+  setMessage('ブラウザの位置情報許可を確認しています。', 'loading');
+  try {
+    const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
+      resolve,
+      reject,
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    ));
+    const response = await fetch('/api/drivers/me/location', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${driverToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyMeters: position.coords.accuracy,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`${result.code}: ${result.message}`);
+    await refresh({ preserveMessage: true });
+    setMessage('現在地を更新し、店舗までの直線距離を再計算しました。', 'success');
+  } catch (error) {
+    const denied = error?.code === 1;
+    setMessage(denied
+      ? '位置情報が許可されませんでした。ブラウザのサイト設定から許可できます。'
+      : `現在地を更新できませんでした。${error.message || '位置情報を取得できませんでした。'}`, 'error');
+  } finally {
+    setLoading(false);
+    if (state) render();
   }
 });
 

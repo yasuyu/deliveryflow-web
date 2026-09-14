@@ -9,7 +9,7 @@
     "start": "node --env-file=.env server.js",
     "dev:postgres": "docker compose --env-file .env.postgres up --watch",
     "studio:postgres": "node scripts/studio-postgresql.js",
-    "check": "node --check server.js && node --check public/app.js && node --check scripts/studio-postgresql.js",
+    "check": "node --check server.js && node --check location.js && node --check public/app.js && node --check scripts/studio-postgresql.js",
     "test": "node --test",
     "load-test": "node scripts/load.js",
     "test:postgresql-smoke": "node scripts/postgresql-smoke.js",
