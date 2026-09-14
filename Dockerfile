@@ -20,6 +20,7 @@ RUN DATABASE_PROVIDER=postgresql \
 
 COPY --chown=node:node server.js ./
 COPY --chown=node:node score-bonuses.js ./
+COPY --chown=node:node location.js ./
 COPY --chown=node:node public ./public
 COPY --chown=node:node docs ./docs
 COPY docker-entrypoint.sh ./

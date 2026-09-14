@@ -9,7 +9,7 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Run the application on the user's own PC using free local tooling.
 - Use Docker Compose with PostgreSQL as the production-like verification environment.
 - External deployment and multi-server infrastructure are deferred until the application needs to be used by other people over the internet.
-- Continue with local-first driver location and distance features next.
+- Continue with maps and route display only after evaluating a privacy-preserving provider.
 
 ## Completed
 
@@ -58,6 +58,18 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 - Load-test script and PostgreSQL container smoke test
 - Compose Watch support
 
+### Driver location and distance
+
+- Request browser geolocation only after the driver explicitly presses the update button
+- Accept authenticated location updates only while the driver is working
+- Treat locations older than five minutes as stale
+- Remove retained coordinates when the driver ends the shift
+- Calculate pickup and drop-off straight-line distances without an external map service
+- Keep exact driver coordinates out of dashboard and update responses
+- Mark store and drop-off coordinates as synthetic demo data
+- Cover validation, freshness boundaries, distance calculation, authentication, and retention in tests
+- Add matching SQLite and PostgreSQL migrations and OpenAPI documentation
+
 ## Recent relevant pull requests
 
 - PR #4: delivery history search and filtering
@@ -69,27 +81,27 @@ This file is a navigation aid. The current code, migrations, OpenAPI document, a
 ## Partially implemented
 
 - Dispatching currently uses server-generated test orders rather than nearby-order search.
+- Distances are straight-line estimates over synthetic points; road routes and travel times are not implemented.
 
 ## Recommended next feature
 
-### GPS location and distance
+### Maps and routes
 
-- Capture the driver's location with explicit permission
-- Calculate distance to pickup and drop-off points
-- Keep location data local and document retention behavior before adding maps
+- Evaluate a map/route provider and its privacy, key management, and free-tier limits
+- Display road routes and estimated travel distance without exposing location longer than necessary
 
-Suggested branch: `feature/driver-location`
+Suggested branch: `feature/route-map`
 
 ## Later roadmap
 
-1. GPS location, distance calculation, maps, and route display
+1. Maps and route display
 2. WebSocket updates and an offline operation queue
 3. Stagnation detection, safety alerts, and an order simulator
 4. Redis, multi-server operation, and external cloud deployment when needed
 
 ## Verification baseline
 
-- PR #8 CI completed successfully.
+- PR #9 CI completed successfully and was merged.
 - CI covered the SQLite test suite and PostgreSQL container smoke test.
 - Post-merge syntax checks and automated tests succeeded.
 

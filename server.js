@@ -8,6 +8,7 @@ const {
   parseBreakdown,
   scoreRuleCodes,
 } = require('./score-bonuses');
+const { distanceMeters, locationStatus, validateLocation } = require('./location');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -133,8 +134,40 @@ function securityHeaders() {
 }
 
 function publicDriver(driver) {
-  const { accessTokenHash, pinHash, ...safeDriver } = driver;
+  const {
+    accessTokenHash,
+    pinHash,
+    latitude,
+    longitude,
+    locationAccuracyMeters,
+    locationUpdatedAt,
+    ...safeDriver
+  } = driver;
   return safeDriver;
+}
+
+function publicLocation(driver) {
+  return {
+    status: locationStatus(driver),
+    updatedAt: driver.locationUpdatedAt,
+    accuracyMeters: driver.locationAccuracyMeters,
+  };
+}
+
+function routeDistance(order, driver) {
+  const locationIsFresh = locationStatus(driver) === 'FRESH';
+  return {
+    toPickupMeters: locationIsFresh
+      ? distanceMeters(
+        { latitude: driver.latitude, longitude: driver.longitude },
+        { latitude: order.store.latitude, longitude: order.store.longitude },
+      )
+      : null,
+    pickupToDropoffMeters: distanceMeters(
+      { latitude: order.store.latitude, longitude: order.store.longitude },
+      { latitude: order.dropoffLatitude, longitude: order.dropoffLongitude },
+    ),
+  };
 }
 
 function validatePin(pin) {
@@ -310,6 +343,8 @@ async function createNextOffer(driver, client = prisma) {
       storeId: store.id,
       pickupName: store.name,
       dropoffName: `プリズムハウス ${number}号館`,
+      dropoffLatitude: 34.978 + (number % 5) * 0.0004,
+      dropoffLongitude: 135.968 + (number % 7) * 0.0004,
       status: 'OFFERING',
     },
   });
@@ -405,10 +440,19 @@ async function dashboard(driverId) {
     include: { order: { include: { store: true } } },
   });
   return {
-    driver: publicDriver(await prisma.driver.findUnique({ where: { id: driverId } })),
-    offer: offer ? { ...offer, scoreBreakdown: parseBreakdown(offer.scoreBreakdown) } : null,
+    driver: publicDriver(driver),
+    location: publicLocation(driver),
+    offer: offer ? {
+      ...offer,
+      scoreBreakdown: parseBreakdown(offer.scoreBreakdown),
+      routeDistance: routeDistance(offer.order, driver),
+    } : null,
     assignment: assignment
-      ? { ...assignment, scoreBreakdown: parseBreakdown(assignment.scoreBreakdown) }
+      ? {
+        ...assignment,
+        scoreBreakdown: parseBreakdown(assignment.scoreBreakdown),
+        routeDistance: routeDistance(assignment.order, driver),
+      }
       : null,
     simulator: { weatherCondition: simulatedWeatherCondition },
   };
@@ -695,13 +739,39 @@ async function endShift(driver) {
     }),
     prisma.driver.update({
       where: { id: driver.id },
-      data: { status: 'OFFLINE', shiftStartedAt: null },
+      data: {
+        status: 'OFFLINE',
+        shiftStartedAt: null,
+        latitude: null,
+        longitude: null,
+        locationAccuracyMeters: null,
+        locationUpdatedAt: null,
+      },
     }),
   ]);
   for (const offer of pendingOffers) {
     await restoreOrderWhenCandidatesAreGone(offer.orderId);
   }
   return publicDriver(await prisma.driver.findUnique({ where: { id: driver.id } }));
+}
+
+async function updateDriverLocation(driver, location) {
+  if (driver.status === 'OFFLINE') {
+    throw new ApiError(409, 'INVALID_STATE_TRANSITION', '現在地は勤務中のみ更新できます');
+  }
+  const validationMessage = validateLocation(location);
+  if (validationMessage) throw new ApiError(400, 'VALIDATION_ERROR', validationMessage);
+
+  const updated = await prisma.driver.update({
+    where: { id: driver.id },
+    data: {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      locationAccuracyMeters: location.accuracyMeters ?? null,
+      locationUpdatedAt: new Date(),
+    },
+  });
+  return publicLocation(updated);
 }
 
 async function showCurrentOffer(driver) {
@@ -969,6 +1039,9 @@ async function handle(request, response) {
   }
   if (request.method === 'GET' && url.pathname === '/api/drivers/ranking') {
     return json(response, 200, await driverRanking(driver.id));
+  }
+  if (request.method === 'PUT' && url.pathname === '/api/drivers/me/location') {
+    return json(response, 200, await updateDriverLocation(driver, await readJsonBody(request)));
   }
 
   const idempotentResponse = async (operation) => {

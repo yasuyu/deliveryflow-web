@@ -351,6 +351,79 @@ test('配達履歴を配送状態で絞り込める', async () => {
   assert.deepEqual(delivered.body.deliveries, []);
 });
 
+test('勤務中だけ現在地を保持して距離を返し、退勤時に消去する', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '現在地確認配達員', pin: '864209' }),
+  });
+  const token = registration.body.accessToken;
+  const locationHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const offlineUpdate = await request('/api/drivers/me/location', {
+    method: 'PUT', headers: locationHeaders,
+    body: JSON.stringify({ latitude: 34.98, longitude: 135.96, accuracyMeters: 8 }),
+  });
+  assert.equal(offlineUpdate.status, 409);
+  assert.equal(offlineUpdate.body.code, 'INVALID_STATE_TRANSITION');
+
+  await request('/api/shifts/start', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': 'location-start' },
+  });
+  const invalid = await request('/api/drivers/me/location', {
+    method: 'PUT', headers: locationHeaders,
+    body: JSON.stringify({ latitude: 91, longitude: 135.96 }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.body.code, 'VALIDATION_ERROR');
+
+  const updated = await request('/api/drivers/me/location', {
+    method: 'PUT', headers: locationHeaders,
+    body: JSON.stringify({ latitude: 34.98, longitude: 135.96, accuracyMeters: 8 }),
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.status, 'FRESH');
+  assert.equal(updated.body.accuracyMeters, 8);
+  assert.notEqual(updated.body.updatedAt, null);
+
+  const dashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(dashboard.body.location.status, 'FRESH');
+  assert.equal(typeof dashboard.body.offer.routeDistance.toPickupMeters, 'number');
+  assert.equal(typeof dashboard.body.offer.routeDistance.pickupToDropoffMeters, 'number');
+  assert.equal(dashboard.body.driver.latitude, undefined);
+
+  const staleDatabase = new DatabaseSync(databasePath);
+  staleDatabase.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
+    .run(Date.now() - 5 * 60 * 1000 - 1, registration.body.driver.id);
+  staleDatabase.close();
+  const staleDashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(staleDashboard.body.location.status, 'STALE');
+  assert.equal(staleDashboard.body.offer.routeDistance.toPickupMeters, null);
+
+  await request('/api/drivers/me/location', {
+    method: 'PUT', headers: locationHeaders,
+    body: JSON.stringify({ latitude: 34.98, longitude: 135.96, accuracyMeters: 8 }),
+  });
+
+  const ended = await request('/api/shifts/end', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': 'location-end' },
+  });
+  assert.equal(ended.status, 200);
+  const afterEnd = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(afterEnd.body.location.status, 'MISSING');
+  assert.equal(afterEnd.body.location.updatedAt, null);
+
+  const database = new DatabaseSync(databasePath);
+  const stored = database.prepare(
+    'SELECT latitude, longitude, locationAccuracyMeters, locationUpdatedAt FROM Driver WHERE id = ?',
+  ).get(registration.body.driver.id);
+  database.close();
+  assert.equal(stored.latitude, null);
+  assert.equal(stored.longitude, null);
+  assert.equal(stored.locationAccuracyMeters, null);
+  assert.equal(stored.locationUpdatedAt, null);
+});
+
 test('認証なしでは配達員用APIを利用できない', async () => {
   const response = await request('/api/dashboard');
   assert.equal(response.status, 401);
@@ -367,6 +440,14 @@ test('認証なしでは配達員用APIを利用できない', async () => {
   });
   assert.equal(weather.status, 401);
   assert.equal(weather.body.code, 'UNAUTHORIZED');
+
+  const location = await request('/api/drivers/me/location', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ latitude: 35, longitude: 135 }),
+  });
+  assert.equal(location.status, 401);
+  assert.equal(location.body.code, 'UNAUTHORIZED');
 });
 
 test('監視用エンドポイントはDB接続状況と安全なメトリクスを返す', async () => {
