@@ -1,119 +1,120 @@
-# DeliveryFlow Web project status
+# DeliveryFlow Web プロジェクト状況
 
-Last reviewed: 2026-09-14
+最終確認日: 2026-09-15
 
-This file is a navigation aid. The current code, migrations, OpenAPI document, and automated tests are the source of truth when this summary differs from the implementation.
+このファイルは、プロジェクトの現状を把握するための案内です。この概要と実装に違いがある場合は、現在のコード、Migration、OpenAPI文書、自動テストを正とします。
 
-## Current direction
+## 現在の方針
 
-- Run the application on the user's own PC using free local tooling.
-- Use Docker Compose with PostgreSQL as the production-like verification environment.
-- External deployment and multi-server infrastructure are deferred until the application needs to be used by other people over the internet.
-- Continue with maps and route display only after evaluating a privacy-preserving provider.
+- 無料のローカルツールを使用し、利用者自身のPCでアプリケーションを動かします。
+- 本番に近い検証環境には、Docker ComposeとPostgreSQLを使用します。
+- 外部公開や複数サーバー構成は、インターネット経由で他の利用者が使う必要が生じるまで保留します。
+- 地図と経路表示は、プライバシーに配慮できるサービスを評価してから進めます。
 
-## Completed
+## 実装済み
 
-### Delivery lifecycle
+### 配達の流れ
 
-- Driver registration and PIN login
-- Work start and end
-- Delivery offer generation, acceptance, and rejection
-- Pickup and completion state transitions
-- Idempotency-Key handling and duplicate-operation protection
-- Delivery history with status filtering
+- 配達員登録とPINログイン
+- 勤務開始と退勤
+- 配達オファーの作成、受諾、辞退
+- 荷物受取と配達完了の状態遷移
+- `Idempotency-Key`による再送処理と重複操作の防止
+- 配送状態で絞り込める配達履歴
 
-### Driver scoring
+### 配達員スコア
 
-- Award points once when a delivery is completed
-- Default completion award of 100 points through `ScoreRule`
-- Store awards and their reasons in `ScoreEvent`
-- Track the driver's cumulative score
-- Return the last 14 days, cumulative score, and recent award history from `GET /api/drivers/me/score`
-- Display estimated award points, the score summary, and recent score history in the web UI
-- Prevent duplicate score awards for the same delivery
-- Return the last 14 days and all-time top 10 rankings from `GET /api/drivers/ranking`
-- Return and highlight the logged-in driver's own rank
-- Use documented competition ranking for tied scores
-- Display all three ranking periods in the web UI
-- Rank monthly score by Japan calendar month and display it alongside the existing periods
-- Give all drivers ranked first, second, or third the corresponding monthly title, including ties
-- Derive Rookie, Bronze, Silver, and Gold titles from cumulative score
-- Return the current title, next title, points needed, and progress from `GET /api/drivers/me/score`
-- Display title progress in the web UI and cover score boundaries in automated tests
-- Add 30-point rain and 50-point Japan-time late-night bonuses, including stacking
-- Freeze the score estimate and breakdown when an offer is created and preserve it through completion
-- Provide a local clear/rain simulator without an external weather service
-- Display the bonus breakdown before acceptance, during delivery, and in completed score history
-- Cover rule selection, late-night boundaries, saved snapshots, and duplicate-award prevention
-- SQLite and PostgreSQL migrations, OpenAPI updates, and automated tests
+- 配達完了時に1回だけポイントを付与
+- `ScoreRule`による標準100ポイントの配達完了加点
+- `ScoreEvent`への加点と理由の保存
+- 配達員の累計スコア管理
+- `GET /api/drivers/me/score`から直近14日間、累計スコア、最近の加点履歴を返却
+- Web画面への見込みポイント、スコア概要、最近の加点履歴の表示
+- 同じ配達に対する重複加点の防止
+- `GET /api/drivers/ranking`から直近14日間と全期間の上位10名を返却
+- ログイン中の配達員自身の順位を返却して強調表示
+- 同点時の順位を競技順位方式で算出し、仕様として明記
+- Web画面への3期間すべてのランキング表示
+- 日本時間の暦月による月間スコア順位を算出し、既存期間と並べて表示
+- 同点を含む月間1位、2位、3位の全配達員に対応する称号を付与
+- 累計スコアからルーキー、ブロンズ、シルバー、ゴールドの称号を算出
+- `GET /api/drivers/me/score`から現在の称号、次の称号、必要ポイント、進捗を返却
+- Web画面への称号進捗表示と、境界値の自動テスト
+- 雨天30ポイント、日本時間の深夜50ポイントのボーナスと重複適用
+- オファー作成時に見込みスコアと内訳を固定し、配達完了まで保持
+- 外部の天候サービスを使わない、晴天・雨天のローカルシミュレーター
+- 受諾前、配達中、完了後のスコア履歴へのボーナス内訳表示
+- ルール選択、深夜時間帯の境界、保存したスナップショット、重複加点防止のテスト
+- SQLiteとPostgreSQLのMigration、OpenAPI更新、自動テスト
 
-### Platform and quality
+### 基盤と品質
 
-- Prisma with SQLite for lightweight development and automated tests
-- PostgreSQL with Docker Compose for production-like local verification
-- Prisma Studio startup helpers
-- OpenAPI documentation
+- 軽量な開発・自動テスト環境としてのPrismaとSQLite
+- 本番に近いローカル検証環境としてのPostgreSQLとDocker Compose
+- Prisma Studioの起動補助
+- OpenAPI文書
 - GitHub Actions CI
-- Structured logs, health checks, and safe metrics
-- Load-test script and PostgreSQL container smoke test
-- Compose Watch support
-- Organize browser and server code under `apps/`, with tests and feature modules beside the server
-- Keep `prisma/` at the repository root so existing local SQLite data remains compatible
-- Document directory responsibilities and change locations in `docs/architecture.md`
-- Document state transitions, data relationships, and architectural decisions in dedicated guides
+- 構造化ログ、ヘルスチェック、安全なメトリクス
+- 負荷テストスクリプトとPostgreSQLコンテナのスモークテスト
+- Compose Watch対応
+- ブラウザーとサーバーのコードを`apps/`配下に整理し、テストと機能モジュールをサーバーの近くへ配置
+- 既存のローカルSQLiteデータとの互換性を保つため、`prisma/`をリポジトリ直下に配置
+- `docs/architecture.md`へのディレクトリの責務と変更箇所の記載
+- 状態遷移、データの関係、設計判断を目的別の文書に記載
 
-### Driver location and distance
+### 配達員の現在地と距離
 
-- Request browser geolocation only after the driver explicitly presses the update button
-- Accept authenticated location updates only while the driver is working
-- Treat locations older than five minutes as stale
-- Remove retained coordinates when the driver ends the shift
-- Calculate pickup and drop-off straight-line distances without an external map service
-- Keep exact driver coordinates out of dashboard and update responses
-- Mark store and drop-off coordinates as synthetic demo data
-- Cover validation, freshness boundaries, distance calculation, authentication, and retention in tests
-- Add matching SQLite and PostgreSQL migrations and OpenAPI documentation
+- 配達員が更新ボタンを明示的に押した場合だけ、ブラウザーの位置情報を要求
+- 認証済みで勤務中の配達員からのみ現在地更新を受け付ける
+- 5分を超えた位置情報を期限切れとして扱う
+- 退勤時に保存中の座標を削除
+- 外部の地図サービスを使わず、受取先と届け先までの直線距離を計算
+- ダッシュボードと更新レスポンスに配達員の正確な座標を含めない
+- 店舗と届け先の座標がデモ用の架空データであることを明示
+- 入力検証、鮮度の境界、距離計算、認証、保存期間のテスト
+- SQLiteとPostgreSQLで対応するMigrationとOpenAPI文書を追加
 
-## Recent relevant pull requests
+## 最近の関連プルリクエスト
 
-- PR #4: delivery history search and filtering
-- PR #5: driver score tracking and UI
-- PR #6: repository guidance and project status
-- PR #7: driver rankings and ranking UI
-- PR #8: driver titles and monthly ranking awards
-- PR #9: score bonuses and local weather simulation
-- PR #10: driver location and straight-line distance
+- PR #4: 配達履歴の検索と絞り込み
+- PR #5: 配達員スコアの管理と画面表示
+- PR #6: リポジトリ運用ガイドとプロジェクト状況
+- PR #7: 配達員ランキングとランキング画面
+- PR #8: 配達員の称号と月間ランキング報酬
+- PR #9: スコアボーナスとローカル天候シミュレーション
+- PR #10: 配達員の現在地と直線距離
+- PR #11: アプリケーションのフォルダ整理とREADME改善
 
-## Partially implemented
+## 一部のみ実装済み
 
-- Dispatching currently uses server-generated test orders rather than nearby-order search.
-- Distances are straight-line estimates over synthetic points; road routes and travel times are not implemented.
+- 現在の配車処理では、近隣注文の検索ではなく、サーバーが生成するテスト注文を使用しています。
+- 距離は架空の地点間の直線距離です。道路に沿った経路と移動時間は未実装です。
 
-## Recommended next feature
+## 次に推奨する機能
 
-### Maps and routes
+### 地図と経路
 
-- Evaluate a map/route provider and its privacy, key management, and free-tier limits
-- Display road routes and estimated travel distance without exposing location longer than necessary
+- 地図・経路サービスについて、プライバシー、APIキー管理、無料枠の制限を評価
+- 位置情報を必要以上に保持せず、道路に沿った経路と推定移動距離を表示
 
-Suggested branch: `feature/route-map`
+推奨ブランチ: `feature/route-map`
 
-## Later roadmap
+## 今後のロードマップ
 
-1. Maps and route display
-2. WebSocket updates and an offline operation queue
-3. Stagnation detection, safety alerts, and an order simulator
-4. Redis, multi-server operation, and external cloud deployment when needed
+1. 地図と経路表示
+2. WebSocketによる更新と、オフライン操作キュー
+3. 停滞検知、安全通知、注文シミュレーター
+4. 必要になった段階でRedis、複数サーバー構成、外部クラウドへのデプロイ
 
-## Verification baseline
+## 検証基準
 
-- PR #10 CI completed successfully and was merged.
-- CI covered the SQLite test suite and PostgreSQL container smoke test.
-- Post-merge syntax checks and automated tests succeeded.
+- PR #10のCIが成功し、マージ済みです。
+- CIではSQLiteのテスト一式とPostgreSQLコンテナのスモークテストを実行しました。
+- マージ後の構文チェックと自動テストが成功しました。
 
-## Reference materials
+## 参考資料
 
-- Product and hackathon reference materials are kept outside this repository.
-- On a configured local machine, their locations are stored in the Git-ignored `data/codex-local-context.md`.
-- Relevant documents, screenshots, and notes may be consulted only when needed and explicitly made available by the user.
-- Treat all reference materials as read-only and do not expose personal filesystem paths.
+- プロダクトやハッカソンの参考資料は、このリポジトリの外部に保管します。
+- 設定済みのローカル環境では、保存場所をGit管理外の`data/codex-local-context.md`に記録します。
+- 関連する文書、スクリーンショット、メモは、必要な場合に限り、利用者から明示的に提供されたものを参照します。
+- すべての参考資料を読み取り専用として扱い、個人のファイルパスを公開しません。
