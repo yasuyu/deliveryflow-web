@@ -9,6 +9,7 @@ const {
   scoreRuleCodes,
 } = require('./modules/score/score-bonuses');
 const { distanceMeters, locationStatus, validateLocation } = require('./modules/location/location');
+const { nearestDrivers } = require('./modules/matching/matching');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -64,6 +65,7 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 const port = positiveIntegerFromEnv('PORT', 3000);
 const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 120) * 1000;
+const offerCandidateLimit = positiveIntegerFromEnv('OFFER_CANDIDATE_LIMIT', 3);
 const simulatedScoreDate = process.env.SCORE_BONUS_SIMULATED_NOW
   ? new Date(process.env.SCORE_BONUS_SIMULATED_NOW)
   : null;
@@ -155,9 +157,9 @@ function publicLocation(driver) {
 }
 
 function routeDistance(order, driver) {
-  const locationIsFresh = locationStatus(driver) === 'FRESH';
+  const locationIsAvailable = locationStatus(driver) === 'AVAILABLE';
   return {
-    toPickupMeters: locationIsFresh
+    toPickupMeters: locationIsAvailable
       ? distanceMeters(
         { latitude: driver.latitude, longitude: driver.longitude },
         { latitude: order.store.latitude, longitude: order.store.longitude },
@@ -334,7 +336,21 @@ async function createNextOffer(driver, client = prisma) {
   });
   if (existing) return;
 
+  if (locationStatus(driver) !== 'AVAILABLE') return;
+
   const store = await client.store.findFirst();
+  const eligibleDrivers = await client.driver.findMany({
+    where: {
+      status: 'IDLE',
+      shiftStartedAt: { not: null },
+      latitude: { not: null },
+      longitude: { not: null },
+      offers: { none: { status: 'PENDING' } },
+    },
+  });
+  const candidates = nearestDrivers(eligibleDrivers, store, offerCandidateLimit);
+  if (!candidates.some((candidate) => candidate.id === driver.id)) return;
+
   const number = (await client.order.count()) + 1;
   const rules = await client.scoreRule.findMany();
   const scoreSnapshot = buildScoreSnapshot(rules, {
@@ -351,14 +367,15 @@ async function createNextOffer(driver, client = prisma) {
       status: 'OFFERING',
     },
   });
-  await client.offer.create({
-    data: {
-      driverId: driver.id,
+  await client.offer.createMany({
+    data: candidates.map((candidate) => ({
+      driverId: candidate.id,
       orderId: order.id,
       expiresAt: new Date(Date.now() + offerTtlMilliseconds),
       estimatedPoints: scoreSnapshot.estimatedPoints,
       scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
-    },
+      distanceToPickupMeters: candidate.distanceToPickupMeters,
+    })),
   });
 }
 
@@ -785,8 +802,9 @@ async function showCurrentOffer(driver) {
   await createNextOffer(driver);
   const offer = await prisma.offer.findFirst({
     where: { driverId: driver.id, status: 'PENDING' },
+    orderBy: { id: 'asc' },
   });
-  if (!offer) throw new ApiError(404, 'OFFER_NOT_FOUND', '現在のオファーはありません');
+  if (!offer) throw new ApiError(404, 'OFFER_NOT_FOUND', '現在受け取れるオファーはありません。現在地を更新してお待ちください');
 
   await prisma.driver.update({
     where: { id: driver.id },
@@ -816,6 +834,10 @@ async function acceptOffer(driver, offerId) {
     }
 
     const offer = await transaction.offer.findUnique({ where: { id: offerId } });
+    const siblingOffers = await transaction.offer.findMany({
+      where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
+      select: { driverId: true },
+    });
     const assigned = await transaction.order.updateMany({
       where: { id: offer.orderId, status: 'OFFERING' },
       data: { status: 'ASSIGNED' },
@@ -828,6 +850,15 @@ async function acceptOffer(driver, offerId) {
       where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
       data: { status: 'WITHDRAWN' },
     });
+    if (siblingOffers.length) {
+      await transaction.driver.updateMany({
+        where: {
+          id: { in: siblingOffers.map((sibling) => sibling.driverId) },
+          status: 'OFFERED',
+        },
+        data: { status: 'IDLE' },
+      });
+    }
     await transaction.driver.update({
       where: { id: driver.id },
       data: { status: 'BUSY' },

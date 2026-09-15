@@ -38,13 +38,13 @@
         <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small></aside>
       </section>
       <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
-      <section class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
+      <section id="shiftCard" class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
       <section class="card location-card">
         <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
         <p>ボタンを押したときだけブラウザへ位置情報を依頼します。現在地は勤務中だけ保持し、退勤すると削除します。</p>
         <button id="updateLocation" type="button">現在地を更新する</button>
         <p id="locationStatus" class="location-status" aria-live="polite">勤務を開始すると更新できます。</p>
-        <small>表示する距離は外部地図を使わない直線距離です。道路上の移動距離とは異なります。</small>
+        <small>勤務中に最後に更新した位置を候補選定に使います。距離は外部地図を使わない直線距離で、道路上の移動距離とは異なります。</small>
       </section>
       <section class="card simulator-card">
         <p class="eyebrow">LOCAL WEATHER SIMULATOR</p><h2>天候シミュレーター</h2>
