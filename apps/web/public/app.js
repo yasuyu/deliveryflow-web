@@ -124,7 +124,7 @@ function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
 
 function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = [], routeDistance = {}) {
   card.classList.remove('hidden');
-  detail.innerHTML = `<dl>
+  detail.innerHTML = `${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance)}<dl>
     <dt>店舗</dt><dd>${order.store.name}</dd>
     <dt>受取先</dt><dd>${order.pickupName}</dd>
     <dt>届け先</dt><dd>${order.dropoffName}</dd>

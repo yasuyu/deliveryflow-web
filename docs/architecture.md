@@ -36,11 +36,14 @@ deliveryflow-web/
 │  │     ├─ location.test.js
 │  │     └─ score-bonuses.test.js
 │  └─ web/
-│     └─ public/
-│        ├─ index.html
-│        ├─ app.js
-│        ├─ style.css
-│        └─ docs.html
+│     ├─ public/
+│     │  ├─ index.html
+│     │  ├─ app.js
+│     │  ├─ route-preview.js
+│     │  ├─ style.css
+│     │  └─ docs.html
+│     └─ test/
+│        └─ route-preview.test.js
 ├─ prisma/
 │  ├─ schema.prisma                    SQLite用
 │  ├─ schema.postgresql.prisma         PostgreSQL用
@@ -71,6 +74,7 @@ deliveryflow-web/
 
 - `index.html`: 画面構造
 - `app.js`: ボタン操作、API通信、画面更新
+- `route-preview.js`: 外部通信しない経路模式図の生成。Node.jsからも読み込み、表示ロジックをテストする
 - `style.css`: 見た目とレスポンシブ表示
 - `docs.html`: OpenAPI仕様の閲覧画面
 
