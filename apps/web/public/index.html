@@ -32,12 +32,13 @@
       <p id="registrationMessage" class="message hidden" role="alert" aria-live="assertive"></p>
     </section>
 
-    <div id="workflow" class="hidden">
+    <div id="workflow" class="hidden map-shell">
       <section class="hero">
         <div><p class="eyebrow">DELIVERY LIFECYCLE</p><h2>正しい状態遷移で、<br>配達を完了する。</h2><p>元資料の状態遷移をブラウザ上で追える最小構成です。</p></div>
         <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small></aside>
       </section>
       <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
+      <div id="bottomSheet" class="bottom-sheet">
       <section id="shiftCard" class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
       <section class="card location-card">
         <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
@@ -102,6 +103,7 @@
         <ol id="deliveryHistory" class="history-list"></ol>
       </section>
       <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する、推測困難な許可証です。ログイン時に発行され、ログアウトすると無効になります。</p></section>
+      </div>
     </div>
   </main>
   <script src="/route-preview.js"></script>
