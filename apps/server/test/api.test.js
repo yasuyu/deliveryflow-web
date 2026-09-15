@@ -79,6 +79,14 @@ function authenticatedPost(pathname, key) {
   });
 }
 
+function updateLocation(token, latitude = 34.98, longitude = 135.96) {
+  return request('/api/drivers/me/location', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ latitude, longitude, accuracyMeters: 8 }),
+  });
+}
+
 before(async () => {
   await createTestDatabase();
 
@@ -91,6 +99,7 @@ before(async () => {
       DATABASE_URL: databaseUrl,
       PORT: String(port),
       OFFER_TTL_SECONDS: '120',
+      OFFER_CANDIDATE_LIMIT: '3',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -129,6 +138,8 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const repeatedStart = await authenticatedPost('/api/shifts/start', 'start-shift');
   assert.equal(repeatedStart.status, 200);
   assert.deepEqual(repeatedStart.body, firstStart.body);
+  const located = await updateLocation(accessToken);
+  assert.equal(located.status, 200);
 
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
@@ -321,6 +332,73 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   database.close();
 });
 
+test('店舗に近い3人へ同じオファーを送り、最初の受諾で残りを取り下げる', async () => {
+  const drivers = [];
+  const locations = [
+    [34.981, 135.962],
+    [34.981, 135.963],
+    [34.981, 135.964],
+    [34.981, 136.1],
+  ];
+
+  for (let index = 0; index < locations.length; index += 1) {
+    const registration = await request('/api/drivers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `距離候補配達員${index + 1}`, pin: `65432${index}` }),
+    });
+    assert.equal(registration.status, 201);
+    const token = registration.body.accessToken;
+    const post = (pathname, key) => request(pathname, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key },
+    });
+    await post('/api/shifts/start', `nearest-start-${index}`);
+    const located = await updateLocation(token, ...locations[index]);
+    assert.equal(located.status, 200);
+    drivers.push({ ...registration.body.driver, token, post });
+  }
+
+  const database = new DatabaseSync(databasePath);
+  database.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
+    .run(new Date('2020-01-01T00:00:00Z').getTime(), drivers[1].id);
+
+  const firstOffer = await drivers[0].post('/api/offers/current', 'nearest-show-first');
+  assert.equal(firstOffer.status, 200);
+  assert.equal(firstOffer.body.distanceToPickupMeters, 0);
+  const secondOffer = await drivers[1].post('/api/offers/current', 'nearest-show-second');
+  assert.equal(secondOffer.status, 200);
+  assert.equal(secondOffer.body.orderId, firstOffer.body.orderId);
+
+  const offers = database.prepare(
+    'SELECT driverId, status, distanceToPickupMeters FROM Offer WHERE orderId = ? ORDER BY distanceToPickupMeters, driverId',
+  ).all(firstOffer.body.orderId);
+  assert.equal(offers.length, 3);
+  assert.deepEqual(offers.map((offer) => offer.driverId), drivers.slice(0, 3).map((driver) => driver.id));
+  assert.equal(offers.some((offer) => offer.driverId === drivers[3].id), false);
+  assert.equal(offers.every((offer) => offer.status === 'PENDING'), true);
+
+  const accepted = await drivers[0].post(`/api/offers/${firstOffer.body.id}/accept`, 'nearest-accept');
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.body.driver.status, 'BUSY');
+
+  const settledOffers = database.prepare(
+    'SELECT driverId, status FROM Offer WHERE orderId = ? ORDER BY driverId',
+  ).all(firstOffer.body.orderId);
+  assert.deepEqual(settledOffers.map((offer) => offer.status), ['ACCEPTED', 'WITHDRAWN', 'WITHDRAWN']);
+  const secondDriver = database.prepare('SELECT status FROM Driver WHERE id = ?').get(drivers[1].id);
+  assert.equal(secondDriver.status, 'IDLE');
+  database.close();
+
+  const assignmentId = accepted.body.assignment.id;
+  await drivers[0].post(`/api/assignments/${assignmentId}/pickup`, 'nearest-pickup');
+  await drivers[0].post(`/api/assignments/${assignmentId}/complete`, 'nearest-complete');
+  for (let index = 0; index < drivers.length; index += 1) {
+    const ended = await drivers[index].post('/api/shifts/end', `nearest-end-${index}`);
+    assert.equal(ended.status, 200);
+  }
+});
+
 test('配達履歴を配送状態で絞り込める', async () => {
   const registration = await request('/api/drivers', {
     method: 'POST',
@@ -333,6 +411,7 @@ test('配達履歴を配送状態で絞り込める', async () => {
     headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key },
   });
   await post('/api/shifts/start', 'filter-start');
+  await updateLocation(token, 34.981, 135.962);
   const offer = await post('/api/offers/current', 'filter-offer');
   await post(`/api/offers/${offer.body.id}/accept`, 'filter-accept');
 
@@ -382,12 +461,12 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
     body: JSON.stringify({ latitude: 34.98, longitude: 135.96, accuracyMeters: 8 }),
   });
   assert.equal(updated.status, 200);
-  assert.equal(updated.body.status, 'FRESH');
+  assert.equal(updated.body.status, 'AVAILABLE');
   assert.equal(updated.body.accuracyMeters, 8);
   assert.notEqual(updated.body.updatedAt, null);
 
   const dashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-  assert.equal(dashboard.body.location.status, 'FRESH');
+  assert.equal(dashboard.body.location.status, 'AVAILABLE');
   assert.equal(typeof dashboard.body.offer.routeDistance.toPickupMeters, 'number');
   assert.equal(typeof dashboard.body.offer.routeDistance.pickupToDropoffMeters, 'number');
   assert.equal(dashboard.body.driver.latitude, undefined);
@@ -396,9 +475,9 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
   staleDatabase.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
     .run(Date.now() - 5 * 60 * 1000 - 1, registration.body.driver.id);
   staleDatabase.close();
-  const staleDashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-  assert.equal(staleDashboard.body.location.status, 'STALE');
-  assert.equal(staleDashboard.body.offer.routeDistance.toPickupMeters, null);
+  const oldLocationDashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(oldLocationDashboard.body.location.status, 'AVAILABLE');
+  assert.equal(typeof oldLocationDashboard.body.offer.routeDistance.toPickupMeters, 'number');
 
   await request('/api/drivers/me/location', {
     method: 'PUT', headers: locationHeaders,
@@ -553,6 +632,7 @@ test('配達中はログアウトできない', async () => {
     },
   });
   await post('/api/shifts/start', 'busy-start');
+  await updateLocation(token, 34.982, 135.963);
   const offer = await post('/api/offers/current', 'busy-offer');
   await post(`/api/offers/${offer.body.id}/accept`, 'busy-accept');
 
@@ -643,6 +723,7 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   assert.equal(weather.body.weatherCondition, 'RAIN');
 
   await post('/api/shifts/start', 'rain-start');
+  await updateLocation(token, 34.983, 135.964);
   const offer = await post('/api/offers/current', 'rain-offer');
   assert.equal(offer.body.estimatedPoints, 130);
   assert.deepEqual(offer.body.scoreBreakdown.map((item) => item.code), [

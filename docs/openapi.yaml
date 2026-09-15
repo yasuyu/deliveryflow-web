@@ -45,11 +45,11 @@ paths:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
-        '200': { description: 現在のダッシュボード状態。位置情報の鮮度と、オファーまたは担当配達の直線距離・固定済み見込みスコア・内訳を返す }
+        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の直線距離・固定済み見込みスコア・内訳を返す }
   /api/drivers/me/location:
     put:
       summary: 勤務中の配達員本人の現在地を更新する
-      description: ブラウザで明示的に許可・取得した現在地を上書きする。位置は退勤時に削除され、5分を超えると距離計算には使用しない。このPUTは同じ値の再送で二重処理が発生しないためIdempotency-Keyは不要。
+      description: ブラウザで明示的に許可・取得した現在地を上書きする。位置は退勤時に削除され、勤務中に保存した最新位置は更新時刻に関係なく候補選定と距離計算に使用する。このPUTは同じ値の再送で二重処理が発生しないためIdempotency-Keyは不要。
       requestBody:
         required: true
         content:
@@ -63,7 +63,7 @@ paths:
                 accuracyMeters: { type: number, minimum: 0, maximum: 100000, example: 12 }
       responses:
         '200':
-          description: 更新後の位置情報の鮮度、更新時刻、精度。緯度・経度そのものは返さない
+          description: 更新後の位置情報の有無、更新時刻、精度。緯度・経度そのものは返さない
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LocationSummary' }
@@ -244,7 +244,7 @@ components:
       type: object
       required: [status, updatedAt, accuracyMeters]
       properties:
-        status: { type: string, enum: [MISSING, FRESH, STALE] }
+        status: { type: string, enum: [MISSING, AVAILABLE] }
         updatedAt: { type: string, format: date-time, nullable: true }
         accuracyMeters: { type: number, nullable: true }
     ScoreSnapshot:

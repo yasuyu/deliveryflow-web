@@ -63,6 +63,9 @@ ScoreRule（加点ルールのマスター）
 | `expiresAt` | 受諾可能期限 |
 | `estimatedPoints` | オファー作成時に固定した見込み点 |
 | `scoreBreakdown` | 加点コード・表示名・点数のJSONスナップショット |
+| `distanceToPickupMeters` | 候補選定時に保存した店舗までの直線距離（メートル） |
+
+`orderId + driverId`は一意です。1つのOrderに複数の候補Offerを作り、最初に受諾されたOffer以外は`WITHDRAWN`になります。
 
 ### Assignment
 

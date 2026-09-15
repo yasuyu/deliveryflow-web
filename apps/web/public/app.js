@@ -124,7 +124,15 @@ function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
   return `<dt>見込みスコア</dt><dd class="score-estimate"><strong>+${estimatedPoints}ポイント</strong><ul>${rows}</ul></dd>`;
 }
 
-function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = [], routeDistance = {}) {
+function showOrder(
+  order,
+  extraLabel,
+  extraValue,
+  estimatedPoints = null,
+  scoreBreakdown = [],
+  routeDistance = {},
+  matchedDistanceToPickupMeters = null,
+) {
   card.classList.remove('hidden');
   displayedOrder = order;
   detail.innerHTML = `${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
@@ -135,6 +143,7 @@ function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreB
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
     <dt>注文の状態</dt><dd>${order.status}</dd>
     <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
+    ${matchedDistanceToPickupMeters === null ? '' : `<dt>候補選定時の距離</dt><dd>${formatDistance(matchedDistanceToPickupMeters)}（直線）</dd>`}
     <dt>店舗 → 届け先</dt><dd>${formatDistance(routeDistance.pickupToDropoffMeters)}（直線）</dd>
     <dt>${extraLabel}</dt><dd>${extraValue}</dd>
     ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
@@ -263,8 +272,7 @@ function render() {
   updateLocationButton.dataset.alwaysDisabled = String(state.driver.status === 'OFFLINE');
   const locationLabels = {
     MISSING: '現在地はまだ保存されていません。',
-    STALE: `現在地が古くなっています（最終更新: ${state.location.updatedAt ? formatJapanTime(state.location.updatedAt) : '-'}）。`,
-    FRESH: `現在地を利用できます（最終更新: ${formatJapanTime(state.location.updatedAt)}、精度 約${Math.round(state.location.accuracyMeters || 0)}m）。`,
+    AVAILABLE: `現在地を利用できます（最終更新: ${formatJapanTime(state.location.updatedAt)}、精度 約${Math.round(state.location.accuracyMeters || 0)}m）。`,
   };
   locationStatusElement.textContent = state.driver.status === 'OFFLINE'
     ? '退勤中のため現在地は保持していません。'
@@ -288,6 +296,7 @@ function render() {
       state.offer.estimatedPoints,
       state.offer.scoreBreakdown,
       state.offer.routeDistance,
+      state.offer.distanceToPickupMeters,
     );
   }
   if (state.assignment) {
@@ -316,7 +325,9 @@ function render() {
   if (!isLoading) {
     const guidance = {
       OFFLINE: '稼働を開始すると、新しいオファーを確認できます。',
-      IDLE: 'オファーを確認するか、退勤を選んでください。',
+      IDLE: state.location.status === 'MISSING'
+        ? '現在地を更新すると、店舗に近い配達員からオファー候補になります。'
+        : '近い配達員へ送られたオファーを確認するか、退勤を選んでください。',
       OFFERED: '内容と期限を確認して、受諾または辞退を選んでください。',
       BUSY: state.assignment?.pickedUpAt
         ? '配達先に到着したら、配達完了を記録してください。'

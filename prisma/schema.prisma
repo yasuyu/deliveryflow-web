@@ -92,8 +92,13 @@ model Offer {
   expiresAt DateTime?
   estimatedPoints Int    @default(100)
   scoreBreakdown String  @default("[]")
+  distanceToPickupMeters Int?
   order     Order     @relation(fields: [orderId], references: [id])
   driver    Driver    @relation(fields: [driverId], references: [id])
+
+  @@unique([orderId, driverId])
+  @@index([driverId, status])
+  @@index([orderId, status])
 }
 
 model Assignment {
