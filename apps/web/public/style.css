@@ -47,3 +47,39 @@ button:disabled{cursor:wait;opacity:.55}.message--loading{color:#537068}.message
   .workflow--active-delivery #actions button{flex:1;margin:0;min-height:48px;border-radius:12px;background:#159447;font-size:14px}
   .workflow--active-delivery #actions button[data-action^="reject"],.workflow--active-delivery #actions button[data-action="end"]{background:#edf0ed;color:#193f43;font-size:12px}
 }
+
+/* The delivery view is intentionally available on the regular web page too. */
+body:has(.workflow--active-delivery){background:#dfe8e8}
+.workflow--active-delivery{min-height:calc(100vh - 82px);padding-bottom:108px}
+.workflow--active-delivery > .hero{display:flex;position:relative;z-index:4;margin:0 0 0;padding:14px 24px;background:rgba(255,255,255,.94);color:#193f43;border-bottom:1px solid rgba(25,63,67,.12);align-items:center;box-shadow:0 2px 14px rgba(25,63,67,.12)}
+.workflow--active-delivery > .hero > div{display:none}
+.workflow--active-delivery .hero aside{display:flex;gap:10px 18px;align-items:center;margin:0;padding:0;background:transparent;min-width:0;width:100%}
+.workflow--active-delivery .hero aside span{font-size:11px;color:#537068}
+.workflow--active-delivery .hero aside strong{font-size:16px}
+.workflow--active-delivery .hero aside small{font-size:12px;color:#537068}
+.workflow--active-delivery .hero aside small:last-child{margin-left:auto}
+.workflow--active-delivery > .flow,.workflow--active-delivery > .location-card,.workflow--active-delivery > .simulator-card,.workflow--active-delivery > .score-card,.workflow--active-delivery > .ranking-card,.workflow--active-delivery > .card:not(#shiftCard):not(#deliveryCard),.workflow--active-delivery > .learn{display:none}
+.workflow--active-delivery #deliveryCard{display:block;margin:0;padding:0;border:0;border-radius:0;background:#fff;min-height:calc(100vh - 210px);overflow:hidden}
+.workflow--active-delivery #deliveryDetail{display:flex;flex-direction:column}
+.workflow--active-delivery .route-preview{height:58vh;min-height:430px;margin:0;padding:24px;background-color:#d5e4e7;background-image:linear-gradient(28deg,transparent 46%,rgba(255,255,255,.85) 47%,rgba(255,255,255,.85) 52%,transparent 53%),linear-gradient(118deg,transparent 44%,rgba(255,255,255,.8) 45%,rgba(255,255,255,.8) 50%,transparent 51%),linear-gradient(90deg,rgba(91,145,153,.16) 1px,transparent 1px),linear-gradient(rgba(91,145,153,.16) 1px,transparent 1px);background-size:auto,auto,42px 42px,42px 42px;border:0;position:relative}
+.workflow--active-delivery .route-preview__heading{position:absolute;top:24px;left:24px;right:24px;z-index:1;margin:0;padding:12px 16px;border-radius:12px;background:rgba(255,255,255,.86);backdrop-filter:blur(6px)}
+.workflow--active-delivery .route-preview__heading h3{font-size:16px}
+.workflow--active-delivery .route-preview__track{height:100%;display:grid;grid-template-columns:1fr 1.2fr 1fr 1.2fr 1fr;align-items:center;gap:0;padding:70px 8% 20px;position:relative}
+.workflow--active-delivery .route-preview__track:before{content:'';position:absolute;left:14%;right:14%;top:50%;height:7px;border-radius:8px;background:#2c8be6;box-shadow:0 0 0 2px rgba(255,255,255,.75)}
+.workflow--active-delivery .route-preview__segment{height:7px;width:100%;margin:0;background:transparent;z-index:1}
+.workflow--active-delivery .route-preview__segment:after{display:none}
+.workflow--active-delivery .route-preview__segment span{display:none}
+.workflow--active-delivery .route-preview__node{text-align:center;z-index:2}
+.workflow--active-delivery .route-preview__node b{display:inline-grid;place-items:center;width:42px;height:42px;margin:0;border:3px solid #fff;border-radius:50%;background:#26734d;color:#fff;font-size:12px;box-shadow:0 2px 5px rgba(25,63,67,.24)}
+.workflow--active-delivery .route-preview__node small{display:block;margin:8px auto 0;width:max-content;max-width:180px;padding:5px 9px;border-radius:8px;background:rgba(255,255,255,.88);font-size:11px;color:#193f43}
+.workflow--active-delivery .route-preview__node--destination b{background:#df5a4d}
+.workflow--active-delivery .route-preview__note,.workflow--active-delivery .route-preview__external{display:none}
+.workflow--active-delivery #deliveryDetail > dl{margin:-24px auto 0;padding:24px 34px 132px;border-radius:24px 24px 0 0;background:#fff;position:relative;z-index:3;box-shadow:0 -5px 18px rgba(25,63,67,.16);grid-template-columns:190px minmax(180px,620px);width:min(100%,820px);gap:0 18px}
+.workflow--active-delivery #deliveryDetail > dl dt{padding:12px 0;border-bottom:1px solid #edf0ed;font-size:12px;color:#537068}
+.workflow--active-delivery #deliveryDetail > dl dd{padding:12px 0;border-bottom:1px solid #edf0ed;text-align:right;font-size:14px}
+.workflow--active-delivery #deliveryDetail > dl dt:nth-of-type(n+4),.workflow--active-delivery #deliveryDetail > dl dd:nth-of-type(n+4){display:none}
+.workflow--active-delivery #shiftCard{position:fixed;z-index:5;left:0;right:0;bottom:0;margin:0;padding:12px 24px 18px;border:0;border-radius:18px 18px 0 0;background:rgba(255,255,255,.96);box-shadow:0 -4px 16px rgba(25,63,67,.16)}
+.workflow--active-delivery #shiftCard > .eyebrow,.workflow--active-delivery #shiftCard > h2,.workflow--active-delivery #shiftCard > .message{display:none}
+.workflow--active-delivery #actions{display:flex;gap:10px;max-width:820px;margin:auto}
+.workflow--active-delivery #actions button{flex:1;margin:0;min-height:50px;border-radius:12px;background:#159447;font-size:14px}
+.workflow--active-delivery #actions button[data-action^="reject"],.workflow--active-delivery #actions button[data-action="end"]{background:#edf0ed;color:#193f43;font-size:12px}
