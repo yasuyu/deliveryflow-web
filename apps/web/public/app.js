@@ -14,6 +14,7 @@ const registrationCard = document.querySelector('#registrationCard');
 const registrationForm = document.querySelector('#registrationForm');
 const loginForm = document.querySelector('#loginForm');
 const workflow = document.querySelector('#workflow');
+const shiftCard = document.querySelector('#shiftCard');
 const completedDeliveryCount = document.querySelector('#completedDeliveryCount');
 const lastDeliveredAt = document.querySelector('#lastDeliveredAt');
 const deliveryHistoryList = document.querySelector('#deliveryHistory');
@@ -252,6 +253,7 @@ function renderHistory() {
 }
 
 function render() {
+  workflow.classList.toggle('workflow--active-delivery', Boolean(state.assignment || state.offer));
   if (state.driver.status === 'OFFLINE') currentBrowserLocation = null;
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
   document.querySelector('#driverName').textContent = state.driver.name;
