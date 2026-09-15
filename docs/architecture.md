@@ -52,6 +52,9 @@ deliveryflow-web/
 │  ├─ workflow.md
 │  ├─ data-model.md
 │  ├─ decisions.md
+│  ├─ features.md
+│  ├─ demo.md
+│  ├─ performance.md
 │  ├─ openapi.yaml
 │  └─ PROJECT_STATUS.md
 └─ scripts/
@@ -106,6 +109,9 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 - `workflow.md`: Driver・Order・Offer・Assignmentの状態遷移と操作条件
 - `data-model.md`: Prismaモデルの関係、制約、データのライフサイクル
 - `decisions.md`: 採用した設計、その背景、利点と制約
+- `features.md`: 機能ID、実装状況、実装や確認場所
+- `demo.md`: 主要機能を画面で再現する手順と確認項目
+- `performance.md`: 簡易負荷試験、メトリクス、測定時の注意点
 
 ### `scripts`
 
@@ -136,6 +142,9 @@ Web画面はDB構造を知りません。機能モジュールはHTTP応答の�
 | DBモデル | `prisma`の両Schema・両Migration |
 | APIの公開契約 | `docs/openapi.yaml` |
 | 実装状況・次の予定 | `docs/PROJECT_STATUS.md` |
+| 機能単位の実装状況 | `docs/features.md` |
+| デモの進め方 | `docs/demo.md` |
+| 負荷試験と性能確認 | `docs/performance.md` |
 | 起動・使い方 | `README.md` |
 
 変更後は最低限`npm run check`と`npm test`を実行します。DB変更時はSQLiteとPostgreSQLの両方を検証します。
