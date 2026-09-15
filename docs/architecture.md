@@ -28,12 +28,15 @@ deliveryflow-web/
 │  │  │  ├─ main.js                    HTTP APIと配達フロー
 │  │  │  └─ modules/
 │  │  │     ├─ location/
-│  │  │     │  └─ location.js          距離・鮮度・入力検証
+│  │  │     │  └─ location.js          位置保存・距離・入力検証
+│  │  │     ├─ matching/
+│  │  │     │  └─ matching.js          店舗から近い候補者の選定
 │  │  │     └─ score/
 │  │  │        └─ score-bonuses.js     加点条件と内訳
 │  │  └─ test/
 │  │     ├─ api.test.js
 │  │     ├─ location.test.js
+│  │     ├─ matching.test.js
 │  │     └─ score-bonuses.test.js
 │  └─ web/
 │     ├─ public/
@@ -88,7 +91,8 @@ Node.jsの起動点です。HTTPルーティング、Bearer認証、配達状態
 
 HTTPやDBに依存しない、単体テスト可能な機能ロジックを置きます。
 
-- `location`: Haversine式による直線距離、5分の鮮度判定、座標検証
+- `location`: Haversine式による直線距離、座標検証、勤務中の最新位置管理
+- `matching`: 店舗からの直線距離で候補配達員を近い順に選定
 - `score`: 基本点、雨天・深夜ボーナス、保存済み内訳の解析
 
 新しい機能は、たとえば`modules/route`や`modules/matching`のように責務名で追加します。名前だけの空フォルダは作りません。
@@ -102,7 +106,8 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 ### `apps/server/test`
 
 - `api.test.js`: 一時SQLite DBと実際のHTTPサーバーを使う結合テスト
-- `location.test.js`: 距離・鮮度・入力範囲の単体テスト
+- `location.test.js`: 距離・保存位置・入力範囲の単体テスト
+- `matching.test.js`: 近い順の候補選定と同距離時の順位テスト
 - `score-bonuses.test.js`: 加点ルールと時間境界の単体テスト
 
 ### `docs`

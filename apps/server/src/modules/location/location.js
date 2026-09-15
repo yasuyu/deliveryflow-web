@@ -1,5 +1,4 @@
 const earthRadiusMeters = 6_371_000;
-const locationFreshnessMilliseconds = 5 * 60 * 1000;
 
 function degreesToRadians(value) {
   return value * Math.PI / 180;
@@ -15,11 +14,9 @@ function distanceMeters(from, to) {
   return Math.round(earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function locationStatus(driver, now = new Date()) {
+function locationStatus(driver) {
   if (driver.latitude === null || driver.longitude === null || !driver.locationUpdatedAt) return 'MISSING';
-  return now.getTime() - new Date(driver.locationUpdatedAt).getTime() <= locationFreshnessMilliseconds
-    ? 'FRESH'
-    : 'STALE';
+  return 'AVAILABLE';
 }
 
 function validateLocation({ latitude, longitude, accuracyMeters }) {
@@ -36,4 +33,4 @@ function validateLocation({ latitude, longitude, accuracyMeters }) {
   return null;
 }
 
-module.exports = { distanceMeters, locationFreshnessMilliseconds, locationStatus, validateLocation };
+module.exports = { distanceMeters, locationStatus, validateLocation };
