@@ -17,7 +17,27 @@
     return meters < 1000 ? `約${Math.round(meters)}m` : `約${(meters / 1000).toFixed(1)}km`;
   }
 
-  function renderRoutePreview(order, routeDistance = {}) {
+  function validCoordinate(point) {
+    return Number.isFinite(point?.latitude)
+      && point.latitude >= -90 && point.latitude <= 90
+      && Number.isFinite(point?.longitude)
+      && point.longitude >= -180 && point.longitude <= 180;
+  }
+
+  function buildOsmDirectionsUrl(from, to) {
+    if (!validCoordinate(from) || !validCoordinate(to)) {
+      throw new TypeError('経路を開くための座標が正しくありません。');
+    }
+    const url = new URL('https://www.openstreetmap.org/directions');
+    url.searchParams.set('engine', 'fossgis_osrm_car');
+    url.searchParams.set(
+      'route',
+      `${from.latitude},${from.longitude};${to.latitude},${to.longitude}`,
+    );
+    return url.toString();
+  }
+
+  function renderRoutePreview(order, routeDistance = {}, options = {}) {
     const locationAvailable = routeDistance.toPickupMeters !== null
       && routeDistance.toPickupMeters !== undefined;
     const unavailableClass = locationAvailable ? '' : ' route-preview__node--unavailable';
@@ -34,9 +54,15 @@
         <div class="route-preview__segment"><span>${formatDistance(routeDistance.pickupToDropoffMeters)}</span></div>
         <div class="route-preview__node route-preview__node--destination"><span class="route-preview__dot">完了</span><b>届け先</b><small>${escapeHtml(order.dropoffName)}</small></div>
       </div>
-      <p class="route-preview__note">地点の順番と直線距離を示す模式図です。実際の道路形状や所要時間は表していません。</p>
+      <p class="route-preview__note">上の図は地点の順番と直線距離を示す模式図です。実際の道路形状や所要時間は表していません。</p>
+      <div class="route-preview__external">
+        <h4>実際の道路経路を確認</h4>
+        <p>ボタンを押して確認した場合だけ、経路の座標をOpenStreetMapへ送信して別タブを開きます。</p>
+        ${options.canOpenCurrentRoute ? '<button type="button" data-route-kind="current-pickup">現在地 → 店舗</button>' : '<small>現在地からの経路は、この画面で現在地を更新すると開けます。</small>'}
+        <button type="button" class="button-secondary" data-route-kind="pickup-dropoff">店舗 → 届け先</button>
+      </div>
     </section>`;
   }
 
-  return { escapeHtml, formatDistance, renderRoutePreview };
+  return { buildOsmDirectionsUrl, escapeHtml, formatDistance, renderRoutePreview, validCoordinate };
 }));

@@ -39,6 +39,8 @@ const updateLocationButton = document.querySelector('#updateLocation');
 const locationStatusElement = document.querySelector('#locationStatus');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let state;
+let currentBrowserLocation = null;
+let displayedOrder = null;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
 let scoreState = {
   currentScore: 0,
@@ -124,7 +126,10 @@ function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
 
 function showOrder(order, extraLabel, extraValue, estimatedPoints = null, scoreBreakdown = [], routeDistance = {}) {
   card.classList.remove('hidden');
-  detail.innerHTML = `${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance)}<dl>
+  displayedOrder = order;
+  detail.innerHTML = `${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
+    canOpenCurrentRoute: Boolean(currentBrowserLocation),
+  })}<dl>
     <dt>店舗</dt><dd>${order.store.name}</dd>
     <dt>受取先</dt><dd>${order.pickupName}</dd>
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
@@ -238,6 +243,7 @@ function renderHistory() {
 }
 
 function render() {
+  if (state.driver.status === 'OFFLINE') currentBrowserLocation = null;
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
   document.querySelector('#driverName').textContent = state.driver.name;
   document.querySelector('#driverId').textContent = `配達員ID: ${state.driver.id}`;
@@ -497,6 +503,10 @@ updateLocationButton.addEventListener('click', async () => {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${result.code}: ${result.message}`);
+    currentBrowserLocation = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    };
     await refresh({ preserveMessage: true });
     setMessage('現在地を更新し、店舗までの直線距離を再計算しました。', 'success');
   } catch (error) {
@@ -507,6 +517,40 @@ updateLocationButton.addEventListener('click', async () => {
   } finally {
     setLoading(false);
     if (state) render();
+  }
+});
+
+detail.addEventListener('click', (event) => {
+  const routeButton = event.target.closest('button[data-route-kind]');
+  if (!routeButton || !displayedOrder) return;
+  const store = {
+    latitude: displayedOrder.store.latitude,
+    longitude: displayedOrder.store.longitude,
+  };
+  const dropoff = {
+    latitude: displayedOrder.dropoffLatitude,
+    longitude: displayedOrder.dropoffLongitude,
+  };
+  const includesCurrentLocation = routeButton.dataset.routeKind === 'current-pickup';
+  const from = includesCurrentLocation ? currentBrowserLocation : store;
+  const to = includesCurrentLocation ? store : dropoff;
+  if (!from) {
+    setMessage('この画面で現在地を更新してから、道路経路を開いてください。', 'error');
+    return;
+  }
+  const dataDescription = includesCurrentLocation
+    ? '現在地と店舗の座標'
+    : 'デモ用の店舗と届け先の座標';
+  const confirmed = window.confirm(
+    `${dataDescription}をOpenStreetMapへ送信し、外部サイトを開きます。よろしいですか？`,
+  );
+  if (!confirmed) return;
+  try {
+    const routeUrl = DeliveryFlowRoutePreview.buildOsmDirectionsUrl(from, to);
+    window.open(routeUrl, '_blank', 'noopener,noreferrer');
+    setMessage('OpenStreetMapの道路経路を別タブで開きました。', 'success');
+  } catch (error) {
+    setMessage(error.message, 'error');
   }
 });
 
