@@ -358,6 +358,9 @@ async function refresh({ preserveMessage = false } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
+    registrationCard.classList.add('hidden');
+    workflow.classList.remove('hidden');
+    render();
     const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
     const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
     const [historyResponse, scoreResponse, rankingResponse] = await Promise.all([
@@ -376,8 +379,6 @@ async function refresh({ preserveMessage = false } = {}) {
     historyState = history;
     scoreState = score;
     rankingState = ranking;
-    registrationCard.classList.add('hidden');
-    workflow.classList.remove('hidden');
     render();
     if (!preserveMessage) setMessage('最新の配達状況を表示しています。', 'success');
   } catch (error) {
