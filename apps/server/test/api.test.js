@@ -474,6 +474,13 @@ test('配達員IDでは認証できず、安全な応答ヘッダーを返す', 
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
 });
 
+test('経路プレビューのブラウザースクリプトを配信する', async () => {
+  const response = await fetch(`${baseUrl}/route-preview.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/javascript/);
+  assert.match(await response.text(), /renderRoutePreview/);
+});
+
 test('1MBを超えるJSON本文は受け付けない', async () => {
   const response = await request('/api/drivers', {
     method: 'POST',
