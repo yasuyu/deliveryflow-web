@@ -76,6 +76,7 @@ model Order {
   storeId     Int
   pickupName  String
   dropoffName String
+  deliveryFeeYen    Int   @default(500)
   dropoffLatitude Float @default(34.978)
   dropoffLongitude Float @default(135.968)
   status      String      @default("CREATED")

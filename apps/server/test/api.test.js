@@ -144,6 +144,11 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
   assert.equal(offerResult.body.status, 'PENDING');
+  assert.equal(offerResult.body.order.deliveryFeeYen, 500);
+  assert.equal(typeof offerResult.body.order.store.latitude, 'number');
+  assert.equal(typeof offerResult.body.order.store.longitude, 'number');
+  assert.equal(typeof offerResult.body.order.dropoffLatitude, 'number');
+  assert.equal(typeof offerResult.body.order.dropoffLongitude, 'number');
   assert.equal(offerResult.body.estimatedPoints, 100);
   assert.deepEqual(offerResult.body.scoreBreakdown, [
     { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100 },

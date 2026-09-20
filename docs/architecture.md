@@ -62,7 +62,8 @@ deliveryflow-web/
 │  ├─ demo.md
 │  ├─ performance.md
 │  ├─ openapi.yaml
-│  └─ PROJECT_STATUS.md
+│  ├─ PROJECT_STATUS.md
+│  └─ HANDOFF.md
 └─ scripts/
    ├─ load.js
    ├─ postgresql-smoke.js
@@ -121,6 +122,7 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 - `features.md`: 機能ID、実装状況、実装や確認場所
 - `demo.md`: 主要機能を画面で再現する手順と確認項目
 - `performance.md`: 簡易負荷試験、メトリクス、測定時の注意点
+- `HANDOFF.md`: 新しいチャットで作業を再開するときの確認事項
 
 ### `scripts`
 

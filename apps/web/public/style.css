@@ -112,4 +112,15 @@ body:has(.workflow--active-delivery){background:#dfe8e8}
 #workflow.map-shell .bottom-sheet .location-card h2{font-size:18px}
 #workflow.map-shell .bottom-sheet .score-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
 #workflow.map-shell .bottom-sheet .learn{border-bottom:0}
+.delivery-progress{padding:14px 16px;margin:0 0 16px;border-radius:14px;background:#f5f3ef}
+.delivery-progress__guidance{margin:0 0 12px;font-size:18px;font-weight:900;color:#193f43}
+.delivery-progress ol{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:0;list-style:none;counter-reset:delivery-step}
+.delivery-progress__step{padding:8px 6px;border-radius:8px;background:#e0ddd6;color:#537068;text-align:center;font-size:11px;font-weight:700;counter-increment:delivery-step}
+.delivery-progress__step::before{content:counter(delivery-step);display:inline-grid;place-items:center;width:20px;height:20px;margin-right:5px;border-radius:50%;background:#fff;color:#537068}
+.delivery-progress__step--done{background:#dceee2;color:#26734d}
+.delivery-progress__step--current{background:#193f43;color:#fff}
+.delivery-progress__step--current::before{color:#193f43}
+.delivery-fee{font-size:20px;color:#26734d}
+#workflow.map-shell .bottom-sheet>#deliveryCard:not(.hidden) .delivery-progress{margin:0 0 18px}
+#workflow.map-shell.workflow--active-delivery #deliveryDetail>dl dt:nth-of-type(n+4),#workflow.map-shell.workflow--active-delivery #deliveryDetail>dl dd:nth-of-type(n+4){display:block}
 @media(max-width:700px){#workflow.map-shell{padding-top:64px}#workflow.map-shell::before{inset:64px 0 0}#workflow.map-shell>.hero{top:0;height:64px;padding:10px 18px}#workflow.map-shell .hero aside{display:grid;grid-template-columns:1fr auto;gap:0 12px}#workflow.map-shell .hero aside span{grid-column:1;font-size:10px}#workflow.map-shell .hero aside strong{grid-column:1;grid-row:2;font-size:14px}#workflow.map-shell .hero aside small{grid-column:2;grid-row:1 / span 2;font-size:10px;text-align:right}#workflow.map-shell .hero aside small:last-child{display:none}#workflow.map-shell .bottom-sheet{width:100%;max-height:calc(100vh - 64px);border-radius:22px 22px 0 0}#workflow.map-shell .bottom-sheet>.card,#workflow.map-shell .bottom-sheet>.learn{padding-left:20px;padding-right:20px}#workflow.map-shell .bottom-sheet>#deliveryCard:not(.hidden) .route-preview{margin-left:-20px;margin-right:-20px;padding-left:20px;padding-right:20px}}

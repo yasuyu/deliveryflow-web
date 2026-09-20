@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.8.0
+  version: 0.9.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 security:
   - bearerAuth: []
@@ -45,7 +45,7 @@ paths:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
-        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の直線距離・固定済み見込みスコア・内訳を返す }
+        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の料金、店舗・届け先の学習用座標、直線距離、固定済み見込みスコア・内訳を返す }
   /api/drivers/me/location:
     put:
       summary: 勤務中の配達員本人の現在地を更新する
@@ -154,10 +154,11 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/ScoreSnapshot'
                   - type: object
-                    required: [id, status]
+                    required: [id, status, order]
                     properties:
                       id: { type: integer }
                       status: { type: string, enum: [PENDING] }
+                      order: { $ref: '#/components/schemas/Order' }
         '404': { description: オファーなし }
   /api/logout:
     post:
@@ -240,6 +241,26 @@ components:
       scheme: bearer
       description: POST /api/driversで発行された推測困難なアクセス用トークンを指定する。DBにはトークン本体ではなくSHA-256ハッシュだけを保存する。
   schemas:
+    Order:
+      type: object
+      required: [id, pickupName, dropoffName, deliveryFeeYen, dropoffLatitude, dropoffLongitude, status, store]
+      properties:
+        id: { type: integer }
+        pickupName: { type: string }
+        dropoffName: { type: string }
+        deliveryFeeYen: { type: integer, minimum: 0, example: 500 }
+        dropoffLatitude: { type: number, example: 34.978 }
+        dropoffLongitude: { type: number, example: 135.968 }
+        status: { type: string, enum: [CREATED, OFFERING, ASSIGNED, PICKED_UP, DELIVERED] }
+        store:
+          type: object
+          required: [id, name, address, latitude, longitude]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            address: { type: string }
+            latitude: { type: number, example: 34.981 }
+            longitude: { type: number, example: 135.962 }
     LocationSummary:
       type: object
       required: [status, updatedAt, accuracyMeters]

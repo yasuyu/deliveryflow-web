@@ -362,6 +362,7 @@ async function createNextOffer(driver, client = prisma) {
       storeId: store.id,
       pickupName: store.name,
       dropoffName: `プリズムハウス ${number}号館`,
+      deliveryFeeYen: 500,
       dropoffLatitude: 34.978 + (number % 5) * 0.0004,
       dropoffLongitude: 135.968 + (number % 7) * 0.0004,
       status: 'OFFERING',
@@ -803,6 +804,7 @@ async function showCurrentOffer(driver) {
   const offer = await prisma.offer.findFirst({
     where: { driverId: driver.id, status: 'PENDING' },
     orderBy: { id: 'asc' },
+    include: { order: { include: { store: true } } },
   });
   if (!offer) throw new ApiError(404, 'OFFER_NOT_FOUND', '現在受け取れるオファーはありません。現在地を更新してお待ちください');
 

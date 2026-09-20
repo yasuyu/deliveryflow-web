@@ -48,7 +48,7 @@ ScoreRule（加点ルールのマスター）
 
 ### Order
 
-配送そのものを表します。Storeを1件参照し、受取先・届け先・届け先座標・配送状態を保持します。
+配送そのものを表します。Storeを1件参照し、受取先・届け先・届け先座標・配達料金・配送状態を保持します。`deliveryFeeYen`は画面に表示する円額で、現在のテスト注文では500円です。
 
 `status`の遷移は`CREATED → OFFERING → ASSIGNED → PICKED_UP → DELIVERED`です。状態の詳しい条件は[workflow.md](workflow.md)を参照してください。
 

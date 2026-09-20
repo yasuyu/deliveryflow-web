@@ -117,6 +117,35 @@ function formatDistance(meters) {
   return meters < 1000 ? `約${meters}m` : `約${(meters / 1000).toFixed(1)}km`;
 }
 
+function formatCoordinate(latitude, longitude) {
+  return `${Number(latitude).toFixed(6)}, ${Number(longitude).toFixed(6)}`;
+}
+
+function deliveryProgressMarkup(status) {
+  const stages = [
+    { status: 'ASSIGNED', label: '店舗へ移動' },
+    { status: 'PICKED_UP', label: '商品を受取' },
+    { status: 'DELIVERED', label: '配達完了' },
+  ];
+  const currentIndex = stages.findIndex((stage) => stage.status === status);
+  const guidance = {
+    OFFERING: '配達内容を確認してください',
+    ASSIGNED: '店舗へ向かってください',
+    PICKED_UP: '配達先へ向かってください',
+    DELIVERED: '配達が完了しました',
+  }[status] || '配達状況を確認してください';
+  const steps = stages.map((stage, index) => {
+    const stateClass = index < currentIndex
+      ? ' delivery-progress__step--done'
+      : index === currentIndex ? ' delivery-progress__step--current' : '';
+    return `<li class="delivery-progress__step${stateClass}">${stage.label}</li>`;
+  }).join('');
+  return `<section class="delivery-progress" aria-label="配達の進行状態">
+    <p class="delivery-progress__guidance">${guidance}</p>
+    <ol>${steps}</ol>
+  </section>`;
+}
+
 function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
   if (estimatedPoints === null) return '';
   const rows = scoreBreakdown
@@ -136,12 +165,15 @@ function showOrder(
 ) {
   card.classList.remove('hidden');
   displayedOrder = order;
-  detail.innerHTML = `${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
+  detail.innerHTML = `${deliveryProgressMarkup(order.status)}${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
     canOpenCurrentRoute: Boolean(currentBrowserLocation),
   })}<dl>
+    <dt>料金</dt><dd class="delivery-fee">${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</dd>
     <dt>店舗</dt><dd>${order.store.name}</dd>
     <dt>受取先</dt><dd>${order.pickupName}</dd>
+    <dt>受取座標</dt><dd><code>${formatCoordinate(order.store.latitude, order.store.longitude)}</code></dd>
     <dt>届け先</dt><dd>${order.dropoffName}</dd>
+    <dt>配達先座標</dt><dd><code>${formatCoordinate(order.dropoffLatitude, order.dropoffLongitude)}</code></dd>
     <dt>注文の状態</dt><dd>${order.status}</dd>
     <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
     ${matchedDistanceToPickupMeters === null ? '' : `<dt>候補選定時の距離</dt><dd>${formatDistance(matchedDistanceToPickupMeters)}（直線）</dd>`}
@@ -312,9 +344,9 @@ function render() {
       state.assignment.routeDistance,
     );
     if (!state.assignment.pickedUpAt) {
-      actions.innerHTML = button('荷物を受け取った', `pickup:${state.assignment.id}`);
+      actions.innerHTML = button('受け取りました', `pickup:${state.assignment.id}`);
     } else if (!state.assignment.deliveredAt) {
-      actions.innerHTML = button('配達を完了する', `complete:${state.assignment.id}`);
+      actions.innerHTML = button('配達完了しました', `complete:${state.assignment.id}`);
     }
   }
 
@@ -332,8 +364,8 @@ function render() {
         : '近い配達員へ送られたオファーを確認するか、退勤を選んでください。',
       OFFERED: '内容と期限を確認して、受諾または辞退を選んでください。',
       BUSY: state.assignment?.pickedUpAt
-        ? '配達先に到着したら、配達完了を記録してください。'
-        : '店舗で荷物を受け取ったら、受取を記録してください。',
+        ? '配達先へ向かってください。到着して受け渡したら、配達完了を記録してください。'
+        : '店舗へ向かってください。商品を受け取ったら「受け取りました」を押してください。',
     };
     setMessage(guidance[state.driver.status]);
   }
