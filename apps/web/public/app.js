@@ -13,6 +13,9 @@ const card = document.querySelector('#deliveryCard');
 const registrationCard = document.querySelector('#registrationCard');
 const registrationForm = document.querySelector('#registrationForm');
 const loginForm = document.querySelector('#loginForm');
+const authTabs = document.querySelectorAll('[data-auth-view]');
+const loginPanel = document.querySelector('#loginPanel');
+const registrationPanel = document.querySelector('#registrationPanel');
 const workflow = document.querySelector('#workflow');
 const shiftCard = document.querySelector('#shiftCard');
 const completedDeliveryCount = document.querySelector('#completedDeliveryCount');
@@ -39,6 +42,7 @@ const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus')
 const updateLocationButton = document.querySelector('#updateLocation');
 const locationStatusElement = document.querySelector('#locationStatus');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
+let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'register';
 let state;
 let currentBrowserLocation = null;
 let displayedOrder = null;
@@ -117,15 +121,33 @@ function formatDistance(meters) {
   return meters < 1000 ? `約${meters}m` : `約${(meters / 1000).toFixed(1)}km`;
 }
 
+function setAuthView(view) {
+  const showLogin = view === 'login';
+  loginPanel.classList.toggle('hidden', !showLogin);
+  registrationPanel.classList.toggle('hidden', showLogin);
+  authTabs.forEach((tab) => {
+    const selected = tab.dataset.authView === view;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  setRegistrationMessage();
+}
+
 function formatCoordinate(latitude, longitude) {
   return `${Number(latitude).toFixed(6)}, ${Number(longitude).toFixed(6)}`;
 }
 
+function formatCompactDistance(meters) {
+  if (meters === null || meters === undefined) return '未取得';
+  return meters < 1000 ? `${meters}m` : `${(meters / 1000).toFixed(1)}km`;
+}
+
 function deliveryProgressMarkup(status) {
   const stages = [
-    { status: 'ASSIGNED', label: '店舗へ移動' },
-    { status: 'PICKED_UP', label: '商品を受取' },
-    { status: 'DELIVERED', label: '配達完了' },
+    { status: 'OFFERING', label: '内容確認' },
+    { status: 'ASSIGNED', label: '店舗へ' },
+    { status: 'PICKED_UP', label: '配達先へ' },
+    { status: 'DELIVERED', label: '完了' },
   ];
   const currentIndex = stages.findIndex((stage) => stage.status === status);
   const guidance = {
@@ -165,22 +187,38 @@ function showOrder(
 ) {
   card.classList.remove('hidden');
   displayedOrder = order;
-  detail.innerHTML = `${deliveryProgressMarkup(order.status)}${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
+  const statusLabel = {
+    OFFERING: 'オファー確認中',
+    ASSIGNED: '店舗へ移動中',
+    PICKED_UP: '配達先へ移動中',
+    DELIVERED: '配達完了',
+  }[order.status] || order.status;
+  detail.innerHTML = `${deliveryProgressMarkup(order.status)}
+  <section class="delivery-summary" aria-label="配達の概要">
+    <p><span>料金</span><strong>${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</strong></p>
+    <p><span>店舗まで</span><strong>${formatCompactDistance(routeDistance.toPickupMeters)}</strong></p>
+    <p><span>配達距離</span><strong>${formatCompactDistance(routeDistance.pickupToDropoffMeters)}</strong></p>
+    ${estimatedPoints === null ? '' : `<p><span>見込み</span><strong>+${estimatedPoints}pt</strong></p>`}
+  </section>
+  ${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
     canOpenCurrentRoute: Boolean(currentBrowserLocation),
-  })}<dl>
-    <dt>料金</dt><dd class="delivery-fee">${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</dd>
-    <dt>店舗</dt><dd>${order.store.name}</dd>
-    <dt>受取先</dt><dd>${order.pickupName}</dd>
-    <dt>受取座標</dt><dd><code>${formatCoordinate(order.store.latitude, order.store.longitude)}</code></dd>
-    <dt>届け先</dt><dd>${order.dropoffName}</dd>
-    <dt>配達先座標</dt><dd><code>${formatCoordinate(order.dropoffLatitude, order.dropoffLongitude)}</code></dd>
-    <dt>注文の状態</dt><dd>${order.status}</dd>
-    <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
-    ${matchedDistanceToPickupMeters === null ? '' : `<dt>候補選定時の距離</dt><dd>${formatDistance(matchedDistanceToPickupMeters)}（直線）</dd>`}
-    <dt>店舗 → 届け先</dt><dd>${formatDistance(routeDistance.pickupToDropoffMeters)}（直線）</dd>
-    <dt>${extraLabel}</dt><dd>${extraValue}</dd>
-    ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
-  </dl>`;
+  })}
+  <details class="delivery-details">
+    <summary>地点・注文の詳細</summary>
+    <dl>
+      <dt>店舗</dt><dd>${order.store.name}</dd>
+      <dt>受取先</dt><dd>${order.pickupName}</dd>
+      <dt>受取座標</dt><dd><code>${formatCoordinate(order.store.latitude, order.store.longitude)}</code></dd>
+      <dt>届け先</dt><dd>${order.dropoffName}</dd>
+      <dt>配達先座標</dt><dd><code>${formatCoordinate(order.dropoffLatitude, order.dropoffLongitude)}</code></dd>
+      <dt>進行状態</dt><dd>${statusLabel}</dd>
+      <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
+      ${matchedDistanceToPickupMeters === null ? '' : `<dt>候補選定時の距離</dt><dd>${formatDistance(matchedDistanceToPickupMeters)}（直線）</dd>`}
+      <dt>店舗 → 届け先</dt><dd>${formatDistance(routeDistance.pickupToDropoffMeters)}（直線）</dd>
+      <dt>${extraLabel}</dt><dd>${extraValue}</dd>
+      ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
+    </dl>
+  </details>`;
 }
 
 function renderScore() {
@@ -374,6 +412,7 @@ function render() {
 async function refresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
     loginForm.elements.driverId.value = localStorage.getItem('deliveryFlowDriverId') || '';
+    if (registrationCard.classList.contains('hidden')) setAuthView(authView);
     registrationCard.classList.remove('hidden');
     workflow.classList.add('hidden');
     return;
@@ -418,8 +457,16 @@ async function refresh({ preserveMessage = false } = {}) {
   }
 }
 
+authTabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    authView = tab.dataset.authView;
+    setAuthView(authView);
+  });
+});
+
 registrationForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  authView = 'register';
   const { name, pin } = Object.fromEntries(new FormData(registrationForm));
   setRegistrationMessage('配達員を登録しています。');
   setLoading(true);
@@ -446,6 +493,7 @@ registrationForm.addEventListener('submit', async (event) => {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  authView = 'login';
   const { driverId, pin } = Object.fromEntries(new FormData(loginForm));
   setRegistrationMessage('ログインしています。');
   setLoading(true);
@@ -490,6 +538,7 @@ actions.addEventListener('click', async (event) => {
       await request('/api/logout');
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
+      authView = 'login';
       await refresh();
       return;
     }
