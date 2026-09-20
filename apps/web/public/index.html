@@ -7,29 +7,52 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <div><p class="eyebrow">HACKATHON REBUILD · DRIVER CLIENT</p><h1>DeliveryFlow</h1></div>
-    <a href="/docs">API仕様</a>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="DeliveryFlow ホーム">
+      <span class="brand__mark" aria-hidden="true">D</span>
+      <span><strong>DeliveryFlow</strong><small>配達員アプリ</small></span>
+    </a>
+    <a class="header-link" href="/docs">API仕様</a>
   </header>
   <main>
-    <section id="registrationCard" class="card hidden">
-      <p class="eyebrow">POST /api/drivers</p>
-      <h2>配達員を登録</h2>
-      <p>名前と6桁のPINを登録すると、安全なアクセストークンが発行されます。</p>
-      <form id="registrationForm">
-        <label>配達員名<input name="name" placeholder="例: 山田 太郎" required></label>
-        <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" placeholder="6桁の数字" required></label>
-        <button type="submit">登録して始める</button>
-      </form>
-      <hr>
-      <p class="eyebrow">POST /api/login</p>
-      <h2>登録済みの配達員としてログイン</h2>
-      <form id="loginForm">
-        <label>配達員ID<input name="driverId" type="number" min="1" inputmode="numeric" autocomplete="username" required></label>
-        <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="current-password" required></label>
-        <button type="submit">ログイン</button>
-      </form>
-      <p id="registrationMessage" class="message hidden" role="alert" aria-live="assertive"></p>
+    <section id="registrationCard" class="auth-shell hidden">
+      <div class="auth-intro">
+        <p class="eyebrow">DELIVERY PARTNER</p>
+        <h2>今日の配達を、<br>迷わずスムーズに。</h2>
+        <p>オファーの確認から受取、配達完了までを、ひとつの画面で案内します。</p>
+        <ul class="auth-benefits">
+          <li><span aria-hidden="true">01</span>次にする操作がすぐ分かる</li>
+          <li><span aria-hidden="true">02</span>料金と経路をまとめて確認</li>
+          <li><span aria-hidden="true">03</span>配達実績とスコアを記録</li>
+        </ul>
+      </div>
+      <div class="auth-card">
+        <div class="auth-tabs" role="tablist" aria-label="認証方法">
+          <button id="loginTab" type="button" role="tab" aria-selected="true" aria-controls="loginPanel" data-auth-view="login">ログイン</button>
+          <button id="registrationTab" type="button" role="tab" aria-selected="false" aria-controls="registrationPanel" data-auth-view="register">新規登録</button>
+        </div>
+        <section id="loginPanel" class="auth-panel" role="tabpanel" aria-labelledby="loginTab">
+          <p class="eyebrow">WELCOME BACK</p>
+          <h2>配達を再開する</h2>
+          <p>配達員IDと6桁のPINを入力してください。</p>
+          <form id="loginForm">
+            <label>配達員ID<input name="driverId" type="number" min="1" inputmode="numeric" autocomplete="username" placeholder="例: 12" required></label>
+            <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="current-password" placeholder="6桁の数字" required></label>
+            <button type="submit" class="auth-submit">ログインして始める</button>
+          </form>
+        </section>
+        <section id="registrationPanel" class="auth-panel hidden" role="tabpanel" aria-labelledby="registrationTab">
+          <p class="eyebrow">FIRST DELIVERY</p>
+          <h2>配達員として登録</h2>
+          <p>表示名と6桁のPINを決めると、配達を始められます。</p>
+          <form id="registrationForm">
+            <label>配達員名<input name="name" placeholder="例: 山田 太郎" autocomplete="name" required></label>
+            <label>ログインPIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" placeholder="6桁の数字" required></label>
+            <button type="submit" class="auth-submit">登録して始める</button>
+          </form>
+        </section>
+        <p id="registrationMessage" class="message hidden" role="alert" aria-live="assertive"></p>
+      </div>
     </section>
 
     <div id="workflow" class="hidden map-shell">
