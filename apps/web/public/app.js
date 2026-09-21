@@ -41,6 +41,7 @@ const weatherCondition = document.querySelector('#weatherCondition');
 const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus');
 const updateLocationButton = document.querySelector('#updateLocation');
 const locationStatusElement = document.querySelector('#locationStatus');
+const realtimeStatus = document.querySelector('#realtimeStatus');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'register';
 let state;
@@ -60,6 +61,14 @@ let rankingState = {
   lifetime: { leaders: [], me: null },
 };
 let isLoading = false;
+let realtimeSocket = null;
+let realtimeReconnectTimer = null;
+let realtimeReconnectAttempt = 0;
+let lastRealtimeSequence = -1;
+let realtimeRefreshQueued = false;
+let lastSuccessfulRefreshAt = 0;
+let pageIsUnloading = false;
+let refreshPromise = null;
 
 function setMessage(text, kind = 'info') {
   message.textContent = text;
@@ -77,6 +86,99 @@ function setLoading(loading) {
     element.disabled = loading || element.dataset.alwaysDisabled === 'true';
   });
   actions.setAttribute('aria-busy', String(loading));
+  if (!loading && realtimeRefreshQueued && !refreshPromise) {
+    realtimeRefreshQueued = false;
+    queueMicrotask(() => refresh({ preserveMessage: true }));
+  }
+}
+
+function setRealtimeStatus(status) {
+  const labels = {
+    connecting: 'リアルタイム接続中…',
+    connected: 'リアルタイム接続',
+    fallback: '自動更新で再接続中',
+  };
+  realtimeStatus.textContent = labels[status] || labels.fallback;
+  realtimeStatus.dataset.status = status;
+  realtimeStatus.classList.toggle('hidden', !driverToken);
+}
+
+function realtimeUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/api/realtime`;
+}
+
+function queueRealtimeRefresh() {
+  if (isLoading) {
+    realtimeRefreshQueued = true;
+    return;
+  }
+  refresh({ preserveMessage: true });
+}
+
+function scheduleRealtimeReconnect() {
+  if (!driverToken || pageIsUnloading || realtimeReconnectTimer) return;
+  const delay = Math.min(30_000, 1_000 * (2 ** realtimeReconnectAttempt));
+  realtimeReconnectAttempt += 1;
+  setRealtimeStatus('fallback');
+  realtimeReconnectTimer = setTimeout(() => {
+    realtimeReconnectTimer = null;
+    connectRealtime();
+  }, delay);
+}
+
+function disconnectRealtime() {
+  clearTimeout(realtimeReconnectTimer);
+  realtimeReconnectTimer = null;
+  const socket = realtimeSocket;
+  realtimeSocket = null;
+  if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, 'Client closed');
+  realtimeStatus.classList.add('hidden');
+}
+
+function connectRealtime() {
+  if (!driverToken || pageIsUnloading) return;
+  if (realtimeSocket && realtimeSocket.readyState <= WebSocket.OPEN) return;
+
+  setRealtimeStatus('connecting');
+  const socket = new WebSocket(realtimeUrl(), [
+    'deliveryflow.realtime.v1',
+    `auth.${driverToken}`,
+  ]);
+  realtimeSocket = socket;
+
+  socket.addEventListener('open', () => {
+    if (socket !== realtimeSocket) return;
+    realtimeReconnectAttempt = 0;
+    setRealtimeStatus('connected');
+  });
+
+  socket.addEventListener('message', (event) => {
+    if (socket !== realtimeSocket) return;
+    try {
+      const realtimeEvent = JSON.parse(event.data);
+      if (!Number.isInteger(realtimeEvent.sequence)) return;
+      if (realtimeEvent.type === 'realtime.connected') {
+        lastRealtimeSequence = realtimeEvent.sequence;
+        return;
+      }
+      if (realtimeEvent.sequence <= lastRealtimeSequence) return;
+      lastRealtimeSequence = realtimeEvent.sequence;
+      if (realtimeEvent.type === 'state.changed') queueRealtimeRefresh();
+    } catch {
+      socket.close(1003, 'Invalid event');
+    }
+  });
+
+  socket.addEventListener('close', () => {
+    if (socket !== realtimeSocket) return;
+    realtimeSocket = null;
+    scheduleRealtimeReconnect();
+  });
+
+  socket.addEventListener('error', () => {
+    if (socket === realtimeSocket) setRealtimeStatus('fallback');
+  });
 }
 
 async function request(url, body = null) {
@@ -409,8 +511,27 @@ function render() {
   }
 }
 
-async function refresh({ preserveMessage = false } = {}) {
+async function refresh(options = {}) {
+  if (refreshPromise) {
+    realtimeRefreshQueued = true;
+    return refreshPromise;
+  }
+  realtimeRefreshQueued = false;
+  refreshPromise = performRefresh(options);
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+    if (realtimeRefreshQueued && !isLoading) {
+      realtimeRefreshQueued = false;
+      queueMicrotask(() => refresh({ preserveMessage: true }));
+    }
+  }
+}
+
+async function performRefresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
+    disconnectRealtime();
     loginForm.elements.driverId.value = localStorage.getItem('deliveryFlowDriverId') || '';
     if (registrationCard.classList.contains('hidden')) setAuthView(authView);
     registrationCard.classList.remove('hidden');
@@ -422,9 +543,10 @@ async function refresh({ preserveMessage = false } = {}) {
       headers: { Authorization: `Bearer ${driverToken}` },
     });
     if (response.status === 401) {
+      disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
-      return refresh();
+      return performRefresh();
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
@@ -450,7 +572,9 @@ async function refresh({ preserveMessage = false } = {}) {
     historyState = history;
     scoreState = score;
     rankingState = ranking;
+    lastSuccessfulRefreshAt = Date.now();
     render();
+    connectRealtime();
     if (!preserveMessage) setMessage('最新の配達状況を表示しています。', 'success');
   } catch (error) {
     setMessage(`読み込みに失敗しました。${error.message}`, 'error');
@@ -481,6 +605,7 @@ registrationForm.addEventListener('submit', async (event) => {
     driverToken = registration.accessToken;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(registration.driver.id));
+    connectRealtime();
     setRegistrationMessage();
     await refresh({ preserveMessage: true });
     setMessage(`登録しました。あなたの配達員IDは ${registration.driver.id} です。`, 'success');
@@ -508,6 +633,7 @@ loginForm.addEventListener('submit', async (event) => {
     driverToken = login.accessToken;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(login.driver.id));
+    connectRealtime();
     setRegistrationMessage();
     await refresh({ preserveMessage: true });
     setMessage('ログインしました。', 'success');
@@ -536,6 +662,7 @@ actions.addEventListener('click', async (event) => {
     if (action === 'offer') await request('/api/offers/current');
     if (action === 'logout') {
       await request('/api/logout');
+      disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
       authView = 'login';
@@ -672,7 +799,14 @@ historyFilterReset.addEventListener('click', async () => {
   }
 });
 
+window.addEventListener('beforeunload', () => {
+  pageIsUnloading = true;
+  disconnectRealtime();
+});
+
 refresh();
 setInterval(() => {
-  if (!isLoading) refresh();
+  const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;
+  const safetyRefreshDue = Date.now() - lastSuccessfulRefreshAt >= 60_000;
+  if (!isLoading && (!realtimeConnected || safetyRefreshDue)) refresh();
 }, 10_000);

@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const net = require('node:net');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { WebSocket } = require('ws');
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const testDatabasePrefix = 'deliveryflow-test-';
@@ -128,6 +129,56 @@ after(async () => {
   await fs.rm(`${databasePath}-journal`, { force: true });
   await fs.rm(`${databasePath}-wal`, { force: true });
   await fs.rm(`${databasePath}-shm`, { force: true });
+});
+
+test('認証済みWebSocketへ状態変更を順序付きで通知する', async () => {
+  const socket = new WebSocket(
+    `${baseUrl.replace('http:', 'ws:')}/api/realtime`,
+    ['deliveryflow.realtime.v1', `auth.${accessToken}`],
+  );
+  const connectedMessage = once(socket, 'message');
+  await once(socket, 'open');
+  const [connectedData] = await connectedMessage;
+  const connected = JSON.parse(connectedData.toString());
+  assert.equal(socket.protocol, 'deliveryflow.realtime.v1');
+  assert.equal(connected.type, 'realtime.connected');
+  assert.equal(Number.isInteger(connected.sequence), true);
+
+  const changedMessage = once(socket, 'message');
+  const weather = await request('/api/simulator/weather', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'realtime-weather-clear',
+    },
+    body: JSON.stringify({ condition: 'CLEAR' }),
+  });
+  assert.equal(weather.status, 200);
+  const [changedData] = await changedMessage;
+  const changed = JSON.parse(changedData.toString());
+  assert.equal(changed.type, 'state.changed');
+  assert.equal(changed.reason, 'simulator.updated');
+  assert.equal(changed.sequence > connected.sequence, true);
+
+  socket.close();
+  await once(socket, 'close');
+});
+
+test('無効なアクセストークンのWebSocket接続を拒否する', async () => {
+  const socket = new WebSocket(
+    `${baseUrl.replace('http:', 'ws:')}/api/realtime`,
+    ['deliveryflow.realtime.v1', `auth.${'x'.repeat(43)}`],
+  );
+  const statusCode = await new Promise((resolve, reject) => {
+    socket.once('unexpected-response', (_request, response) => {
+      response.resume();
+      resolve(response.statusCode);
+    });
+    socket.once('open', () => reject(new Error('無効なWebSocket接続が開かれました')));
+    socket.once('error', reject);
+  });
+  assert.equal(statusCode, 401);
 });
 
 test('配達の状態遷移をAPI経由で完了できる', async () => {
