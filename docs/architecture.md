@@ -8,7 +8,7 @@ DeliveryFlowは、現在は1台のPCで動かす学習用アプリです。構�
 2. 機能を追加するときに、関係するファイルを同じ場所へまとめられること
 3. SQLite版とPostgreSQL版の動作を同じコードで保てること
 
-参考資料のような大規模構成をそのまま複製せず、現時点で実装されている責務だけを配置しています。Redis、WebSocket、道路グラフ、専用シミュレーターなどは、実装すると決まった段階で追加します。
+参考資料のような大規模構成をそのまま複製せず、現時点で実装されている責務だけを配置しています。Redis、道路グラフ、専用シミュレーターなどは、実装すると決まった段階で追加します。
 
 ## 全体構成
 
@@ -77,14 +77,14 @@ deliveryflow-web/
 ブラウザに配信する画面です。APIを呼び出しますが、DBへ直接アクセスしません。
 
 - `index.html`: 画面構造
-- `app.js`: ボタン操作、API通信、画面更新
+- `app.js`: ボタン操作、API通信、WebSocketの再接続と画面更新
 - `route-preview.js`: 外部通信しない経路模式図の生成。Node.jsからも読み込み、表示ロジックをテストする
 - `style.css`: 見た目とレスポンシブ表示
 - `docs.html`: OpenAPI仕様の閲覧画面
 
 ### `apps/server/src/main.js`
 
-Node.jsの起動点です。HTTPルーティング、Bearer認証、配達状態遷移、Prismaを使った保存を担当します。
+Node.jsの起動点です。HTTPルーティング、Bearer認証、WebSocketのUpgrade、配達状態遷移、Prismaを使った保存を担当します。
 
 現在は依存パッケージを少なく保つため1ファイルですが、新しい機能ロジックは`modules`へ分離します。HTTP処理そのものまで増えて見通しが悪くなった時点で、driver、offer、assignmentなどのAPIモジュールへ段階的に分割します。
 
@@ -94,6 +94,7 @@ HTTPやDBに依存しない、単体テスト可能な機能ロジックを置�
 
 - `location`: Haversine式による直線距離、座標検証、勤務中の最新位置管理
 - `matching`: 店舗からの直線距離で候補配達員を近い順に選定
+- `realtime`: WebSocketの認証、接続監視、順序付き変更通知
 - `score`: 基本点、雨天・深夜ボーナス、保存済み内訳の解析
 
 新しい機能は、たとえば`modules/route`や`modules/matching`のように責務名で追加します。名前だけの空フォルダは作りません。
@@ -132,9 +133,10 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 
 ```text
 ブラウザ
-  ↓ HTTP + Bearer token
+  ↓ HTTP + Bearer token / 認証済みWebSocket
 apps/server/src/main.js
   ├─ modules/location  距離・位置検証
+  ├─ modules/realtime  接続・変更通知
   ├─ modules/score     スコア計算
   ↓ Prisma Client
 SQLite または PostgreSQL
@@ -149,6 +151,7 @@ Web画面はDB構造を知りません。機能モジュールはHTTP応答の�
 | 画面表示やボタン | `apps/web/public` |
 | APIや状態遷移 | `apps/server/src/main.js` |
 | 距離・位置ルール | `apps/server/src/modules/location` |
+| WebSocket接続と配信 | `apps/server/src/modules/realtime`、`apps/web/public/app.js` |
 | スコア・ボーナス | `apps/server/src/modules/score` |
 | DBモデル | `prisma`の両Schema・両Migration |
 | APIの公開契約 | `docs/openapi.yaml` |

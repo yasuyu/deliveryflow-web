@@ -10,6 +10,7 @@ const {
 } = require('./modules/score/score-bonuses');
 const { distanceMeters, locationStatus, validateLocation } = require('./modules/location/location');
 const { nearestDrivers } = require('./modules/matching/matching');
+const { createRealtimeHub } = require('./modules/realtime/realtime');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -63,6 +64,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 const prisma = new PrismaClient();
+let realtimeHub;
 const port = positiveIntegerFromEnv('PORT', 3000);
 const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 120) * 1000;
 const offerCandidateLimit = positiveIntegerFromEnv('OFFER_CANDIDATE_LIMIT', 3);
@@ -127,7 +129,7 @@ function metricsBody() {
 
 function securityHeaders() {
   return {
-    'Content-Security-Policy': "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
@@ -280,7 +282,14 @@ async function authenticateDriver(request) {
   if (!match) {
     throw new ApiError(401, 'UNAUTHORIZED', 'AuthorizationヘッダーにBearerトークンが必要です');
   }
-  const accessTokenHash = createHash('sha256').update(match[1]).digest('hex');
+  return authenticateAccessToken(match[1]);
+}
+
+async function authenticateAccessToken(accessToken) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(accessToken || '')) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'アクセストークンが正しくありません');
+  }
+  const accessTokenHash = createHash('sha256').update(accessToken).digest('hex');
   const driver = await prisma.driver.findUnique({ where: { accessTokenHash } });
   if (!driver) throw new ApiError(401, 'UNAUTHORIZED', '配達員が見つかりません');
   return driver;
@@ -409,6 +418,7 @@ async function expireOffers() {
     });
     await restoreOrderWhenCandidatesAreGone(offer.orderId);
   }
+  if (expired.length) realtimeHub?.publish('offer.expired');
 }
 
 async function ensureSeed() {
@@ -1061,6 +1071,7 @@ async function handle(request, response) {
       where: { id: loginDriver.id },
       data: { accessTokenHash },
     });
+    realtimeHub?.disconnectDriver(loginDriver.id);
     return json(response, 200, { driver: publicDriver(updatedDriver), accessToken });
   }
 
@@ -1078,34 +1089,40 @@ async function handle(request, response) {
     return json(response, 200, await driverRanking(driver.id));
   }
   if (request.method === 'PUT' && url.pathname === '/api/drivers/me/location') {
-    return json(response, 200, await updateDriverLocation(driver, await readJsonBody(request)));
+    const updatedLocation = await updateDriverLocation(driver, await readJsonBody(request));
+    json(response, 200, updatedLocation);
+    realtimeHub.publish('location.updated');
+    return;
   }
 
-  const idempotentResponse = async (operation) => {
+  const idempotentResponse = async (operation, reason) => {
     const result = await runIdempotently(request, driver, operation);
-    return json(response, result.status, result.body);
+    json(response, result.status, result.body);
+    realtimeHub.publish(reason);
   };
 
   if (request.method === 'POST' && url.pathname === '/api/shifts/start') {
-    return idempotentResponse(() => startShift(driver));
+    return idempotentResponse(() => startShift(driver), 'shift.started');
   }
   if (request.method === 'POST' && url.pathname === '/api/shifts/end') {
-    return idempotentResponse(() => endShift(driver));
+    return idempotentResponse(() => endShift(driver), 'shift.ended');
   }
   if (request.method === 'POST' && url.pathname === '/api/offers/current') {
-    return idempotentResponse(() => showCurrentOffer(driver));
+    return idempotentResponse(() => showCurrentOffer(driver), 'offer.shown');
   }
   if (request.method === 'POST' && url.pathname === '/api/logout') {
-    return idempotentResponse(async () => {
+    await idempotentResponse(async () => {
       await logoutDriver(driver);
       return { message: 'ログアウトしました' };
-    });
+    }, 'session.ended');
+    realtimeHub.disconnectDriver(driver.id);
+    return;
   }
   if (request.method === 'POST' && url.pathname === '/api/simulator/weather') {
     return idempotentResponse(async () => {
       const { condition } = await readJsonBody(request);
       return updateSimulatorWeather(condition);
-    });
+    }, 'simulator.updated');
   }
 
   const accept = url.pathname.match(/^\/api\/offers\/(\d+)\/accept$/);
@@ -1113,28 +1130,28 @@ async function handle(request, response) {
     return idempotentResponse(async () => {
       await acceptOffer(driver, Number(accept[1]));
       return dashboard(driver.id);
-    });
+    }, 'offer.accepted');
   }
   const reject = url.pathname.match(/^\/api\/offers\/(\d+)\/reject$/);
   if (request.method === 'POST' && reject) {
     return idempotentResponse(async () => {
       await rejectOffer(driver, Number(reject[1]));
       return dashboard(driver.id);
-    });
+    }, 'offer.rejected');
   }
   const pickup = url.pathname.match(/^\/api\/assignments\/(\d+)\/pickup$/);
   if (request.method === 'POST' && pickup) {
     return idempotentResponse(async () => {
       await pickupAssignment(driver, Number(pickup[1]));
       return dashboard(driver.id);
-    });
+    }, 'assignment.picked_up');
   }
   const complete = url.pathname.match(/^\/api\/assignments\/(\d+)\/complete$/);
   if (request.method === 'POST' && complete) {
     return idempotentResponse(async () => {
       const scoreAward = await completeAssignment(driver, Number(complete[1]));
       return { ...await dashboard(driver.id), scoreAward };
-    });
+    }, 'assignment.completed');
   }
   return json(response, 404, { code: 'NOT_FOUND', message: 'このエンドポイントは存在しません' });
 }
@@ -1162,6 +1179,8 @@ const server = http.createServer(async (request, response) => {
     });
   }
 });
+
+realtimeHub = createRealtimeHub(server, authenticateAccessToken);
 
 ensureSeed().then(() => {
   server.listen(port, () => console.log(`DeliveryFlow is running at http://localhost:${port}`));
