@@ -616,6 +616,13 @@ test('経路プレビューのブラウザースクリプトを配信する', as
   assert.match(await response.text(), /renderRoutePreview/);
 });
 
+test('ボトムシートのブラウザースクリプトを配信する', async () => {
+  const response = await fetch(`${baseUrl}/bottom-sheet.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/javascript/);
+  assert.match(await response.text(), /calculateSnapHeights/);
+});
+
 test('1MBを超えるJSON本文は受け付けない', async () => {
   const response = await request('/api/drivers', {
     method: 'POST',
@@ -807,3 +814,4 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   assert.equal(score.body.recentEvents.length, 1);
   assert.deepEqual(score.body.recentEvents[0].breakdown, offer.body.scoreBreakdown);
 });
+

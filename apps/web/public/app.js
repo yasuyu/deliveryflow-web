@@ -42,6 +42,9 @@ const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus')
 const updateLocationButton = document.querySelector('#updateLocation');
 const locationStatusElement = document.querySelector('#locationStatus');
 const realtimeStatus = document.querySelector('#realtimeStatus');
+const bottomSheet = document.querySelector('#bottomSheet');
+const bottomSheetHandle = document.querySelector('#bottomSheetHandle');
+const bottomSheetHandleLabel = document.querySelector('#bottomSheetHandleLabel');
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'register';
 let state;
@@ -69,6 +72,102 @@ let realtimeRefreshQueued = false;
 let lastSuccessfulRefreshAt = 0;
 let pageIsUnloading = false;
 let refreshPromise = null;
+let bottomSheetState = 'medium';
+let bottomSheetDrag = null;
+let suppressBottomSheetClick = false;
+
+function bottomSheetSnapHeights() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  return DeliveryFlowBottomSheet.calculateSnapHeights(viewportHeight, {
+    mobile: window.matchMedia('(max-width: 700px)').matches,
+  });
+}
+
+function setBottomSheetState(nextState, { announce = false } = {}) {
+  const snapHeights = bottomSheetSnapHeights();
+  bottomSheetState = nextState;
+  bottomSheet.style.setProperty('--sheet-height', `${snapHeights[nextState]}px`);
+  bottomSheet.dataset.sheetState = nextState;
+  bottomSheetHandle.setAttribute('aria-expanded', String(nextState !== 'collapsed'));
+  const labels = {
+    collapsed: '上にドラッグして詳細を表示',
+    medium: '上下にドラッグして表示範囲を調整',
+    expanded: '下にドラッグして地図を広く表示',
+  };
+  bottomSheetHandleLabel.textContent = labels[nextState];
+  bottomSheetHandle.setAttribute('aria-label', labels[nextState]);
+  if (announce) bottomSheetHandle.focus({ preventScroll: true });
+}
+
+function finishBottomSheetDrag(event) {
+  if (!bottomSheetDrag || event.pointerId !== bottomSheetDrag.pointerId) return;
+  const { startY, startState, currentHeight } = bottomSheetDrag;
+  const movement = startY - event.clientY;
+  let nextState = DeliveryFlowBottomSheet.nearestState(currentHeight, bottomSheetSnapHeights());
+  if (Math.abs(movement) > 48) {
+    nextState = DeliveryFlowBottomSheet.adjacentState(startState, movement > 0 ? 1 : -1);
+  }
+  suppressBottomSheetClick = bottomSheetDrag.moved;
+  if (bottomSheetHandle.hasPointerCapture(event.pointerId)) {
+    bottomSheetHandle.releasePointerCapture(event.pointerId);
+  }
+  bottomSheetDrag = null;
+  setBottomSheetState(nextState);
+}
+
+bottomSheetHandle.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  const startHeight = bottomSheet.getBoundingClientRect().height;
+  bottomSheetDrag = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startHeight,
+    currentHeight: startHeight,
+    startState: bottomSheetState,
+    moved: false,
+  };
+  bottomSheetHandle.setPointerCapture(event.pointerId);
+  bottomSheet.dataset.sheetState = 'dragging';
+});
+
+bottomSheetHandle.addEventListener('pointermove', (event) => {
+  if (!bottomSheetDrag || event.pointerId !== bottomSheetDrag.pointerId) return;
+  const snapHeights = bottomSheetSnapHeights();
+  const movement = bottomSheetDrag.startY - event.clientY;
+  const height = Math.min(
+    snapHeights.expanded,
+    Math.max(snapHeights.collapsed, bottomSheetDrag.startHeight + movement),
+  );
+  bottomSheetDrag.currentHeight = height;
+  bottomSheetDrag.moved ||= Math.abs(movement) > 6;
+  bottomSheet.style.setProperty('--sheet-height', `${height}px`);
+});
+
+bottomSheetHandle.addEventListener('pointerup', finishBottomSheetDrag);
+bottomSheetHandle.addEventListener('pointercancel', finishBottomSheetDrag);
+
+bottomSheetHandle.addEventListener('click', () => {
+  if (suppressBottomSheetClick) {
+    suppressBottomSheetClick = false;
+    return;
+  }
+  const nextState = bottomSheetState === 'collapsed' ? 'medium'
+    : bottomSheetState === 'medium' ? 'expanded' : 'collapsed';
+  setBottomSheetState(nextState, { announce: true });
+});
+
+bottomSheetHandle.addEventListener('keydown', (event) => {
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === 'Home') setBottomSheetState('collapsed', { announce: true });
+  else if (event.key === 'End') setBottomSheetState('expanded', { announce: true });
+  else setBottomSheetState(DeliveryFlowBottomSheet.adjacentState(
+    bottomSheetState,
+    event.key === 'ArrowUp' ? 1 : -1,
+  ), { announce: true });
+});
+
+window.addEventListener('resize', () => setBottomSheetState(bottomSheetState));
 
 function setMessage(text, kind = 'info') {
   message.textContent = text;
@@ -804,9 +903,11 @@ window.addEventListener('beforeunload', () => {
   disconnectRealtime();
 });
 
+setBottomSheetState(bottomSheetState);
 refresh();
 setInterval(() => {
   const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;
   const safetyRefreshDue = Date.now() - lastSuccessfulRefreshAt >= 60_000;
   if (!isLoading && (!realtimeConnected || safetyRefreshDue)) refresh();
 }, 10_000);
+

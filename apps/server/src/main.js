@@ -1032,6 +1032,7 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/docs') return serveFile(response, path.join(webPublicDirectory, 'docs.html'), 'text/html; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/openapi.yaml') return serveFile(response, path.join(documentationDirectory, 'openapi.yaml'), 'text/yaml; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/route-preview.js') return serveFile(response, path.join(webPublicDirectory, 'route-preview.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/bottom-sheet.js') return serveFile(response, path.join(webPublicDirectory, 'bottom-sheet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, path.join(webPublicDirectory, 'style.css'), 'text/css; charset=utf-8');
 
@@ -1185,3 +1186,4 @@ realtimeHub = createRealtimeHub(server, authenticateAccessToken);
 ensureSeed().then(() => {
   server.listen(port, () => console.log(`DeliveryFlow is running at http://localhost:${port}`));
 });
+
