@@ -1,8 +1,8 @@
 const statusText = {
-  OFFLINE: 'OFFLINE（退勤中）',
-  IDLE: 'IDLE（待機中）',
-  OFFERED: 'OFFERED（オファー確認中）',
-  BUSY: 'BUSY（配達中）',
+  OFFLINE: '退勤中',
+  IDLE: 'オファー待機中',
+  OFFERED: 'オファー確認中',
+  BUSY: '配達中',
 };
 
 const message = document.querySelector('#message');
@@ -45,6 +45,16 @@ const realtimeStatus = document.querySelector('#realtimeStatus');
 const bottomSheet = document.querySelector('#bottomSheet');
 const bottomSheetHandle = document.querySelector('#bottomSheetHandle');
 const bottomSheetHandleLabel = document.querySelector('#bottomSheetHandleLabel');
+const sheetContent = document.querySelector('#sheetContent');
+const sheetTabs = document.querySelectorAll('[data-sheet-view]');
+const logoutButton = document.querySelector('#logoutButton');
+const actionGuidance = document.querySelector('#actionGuidance');
+const actionDestination = document.querySelector('#actionDestination');
+const offerDeadline = document.querySelector('#offerDeadline');
+let sheetView = 'delivery';
+let currentDeliveryKey = null;
+let offerHasExpired = false;
+const sheetScrollPositions = { delivery: 0, activity: 0, settings: 0 };
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'register';
 let state;
@@ -79,7 +89,9 @@ let suppressBottomSheetClick = false;
 function bottomSheetSnapHeights() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
   return DeliveryFlowBottomSheet.calculateSnapHeights(viewportHeight, {
-    mobile: window.matchMedia('(max-width: 700px)').matches,
+    mobile: window.matchMedia('(max-width: 700px), (max-height: 520px)').matches,
+    minimumContentHeight: Math.ceil(Math.max(shiftCard.scrollHeight + 1, shiftCard.getBoundingClientRect().height)
+      + bottomSheetHandle.getBoundingClientRect().height + 2),
   });
 }
 
@@ -95,8 +107,12 @@ function setBottomSheetState(nextState, { announce = false } = {}) {
     expanded: '下にドラッグして地図を広く表示',
   };
   bottomSheetHandleLabel.textContent = labels[nextState];
-  bottomSheetHandle.setAttribute('aria-label', labels[nextState]);
-  if (announce) bottomSheetHandle.focus({ preventScroll: true });
+  bottomSheetHandle.setAttribute('aria-label', `${labels[nextState]}。クリックでも切り替え、上下キーで調整できます`);
+  const navigation = document.querySelector('#sheetNavigation');
+  const focusIsInContent = sheetContent.contains(document.activeElement) || navigation.contains(document.activeElement);
+  navigation.inert = nextState === 'collapsed';
+  sheetContent.inert = nextState === 'collapsed';
+  if (announce || (nextState === 'collapsed' && focusIsInContent)) bottomSheetHandle.focus({ preventScroll: true });
 }
 
 function finishBottomSheetDrag(event) {
@@ -168,10 +184,41 @@ bottomSheetHandle.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('resize', () => setBottomSheetState(bottomSheetState));
+window.visualViewport?.addEventListener('resize', () => setBottomSheetState(bottomSheetState));
+new ResizeObserver(() => {
+  if (!bottomSheetDrag && !workflow.classList.contains('hidden')) setBottomSheetState(bottomSheetState);
+}).observe(shiftCard);
 
-function setMessage(text, kind = 'info') {
+function setSheetView(view, { focus = false } = {}) {
+  sheetScrollPositions[sheetView] = sheetContent.scrollTop;
+  sheetView = view;
+  sheetTabs.forEach((tab) => {
+    const selected = tab.dataset.sheetView === view;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(tab.getAttribute('aria-controls')).classList.toggle('hidden', !selected);
+    if (selected && focus) tab.focus({ preventScroll: true });
+  });
+  sheetContent.scrollTop = sheetScrollPositions[view];
+}
+
+sheetTabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => setSheetView(tab.dataset.sheetView));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? sheetTabs.length - 1
+      : (index + (event.key === 'ArrowRight' ? 1 : -1) + sheetTabs.length) % sheetTabs.length;
+    setSheetView(sheetTabs[next].dataset.sheetView, { focus: true });
+  });
+});
+document.querySelector('[data-open-settings]').addEventListener('click', () => setSheetView('settings', { focus: true }));
+
+function setMessage(text, kind = 'info', source = 'action') {
   message.textContent = text;
   message.className = `message message--${kind}`;
+  message.hidden = !text;
+  message.dataset.source = source;
 }
 
 function setRegistrationMessage(text = '') {
@@ -181,7 +228,7 @@ function setRegistrationMessage(text = '') {
 
 function setLoading(loading) {
   isLoading = loading;
-  document.querySelectorAll('button').forEach((element) => {
+  document.querySelectorAll('[data-action], button[type="submit"], #updateLocation, #historyFilterReset').forEach((element) => {
     element.disabled = loading || element.dataset.alwaysDisabled === 'true';
   });
   actions.setAttribute('aria-busy', String(loading));
@@ -304,11 +351,6 @@ async function request(url, body = null) {
   }
 }
 
-function button(label, action, alwaysDisabled = false) {
-  const disabled = isLoading || alwaysDisabled;
-  return `<button data-action="${action}" data-always-disabled="${alwaysDisabled}"${disabled ? ' disabled' : ''}>${label}</button>`;
-}
-
 function formatJapanTime(value) {
   return new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo',
@@ -361,7 +403,7 @@ function deliveryProgressMarkup(status) {
     const stateClass = index < currentIndex
       ? ' delivery-progress__step--done'
       : index === currentIndex ? ' delivery-progress__step--current' : '';
-    return `<li class="delivery-progress__step${stateClass}">${stage.label}</li>`;
+    return `<li class="delivery-progress__step${stateClass}"${index === currentIndex ? ' aria-current="step"' : ''}>${stage.label}</li>`;
   }).join('');
   return `<section class="delivery-progress" aria-label="配達の進行状態">
     <p class="delivery-progress__guidance">${guidance}</p>
@@ -372,7 +414,7 @@ function deliveryProgressMarkup(status) {
 function scoreBreakdownMarkup(estimatedPoints, scoreBreakdown = []) {
   if (estimatedPoints === null) return '';
   const rows = scoreBreakdown
-    .map((item) => `<li><span>${item.label}</span><strong>+${item.points} pt</strong></li>`)
+    .map((item) => `<li><span>${DeliveryFlowUi.escapeHtml(item.label)}</span><strong>+${Number(item.points)} pt</strong></li>`)
     .join('');
   return `<dt>見込みスコア</dt><dd class="score-estimate"><strong>+${estimatedPoints}ポイント</strong><ul>${rows}</ul></dd>`;
 }
@@ -394,12 +436,17 @@ function showOrder(
     PICKED_UP: '配達先へ移動中',
     DELIVERED: '配達完了',
   }[order.status] || order.status;
-  detail.innerHTML = `${deliveryProgressMarkup(order.status)}
+  const escape = DeliveryFlowUi.escapeHtml;
+  DeliveryFlowUi.updateMarkup(detail, `${deliveryProgressMarkup(order.status)}
   <section class="delivery-summary" aria-label="配達の概要">
     <p><span>料金</span><strong>${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</strong></p>
-    <p><span>店舗まで</span><strong>${formatCompactDistance(routeDistance.toPickupMeters)}</strong></p>
-    <p><span>配達距離</span><strong>${formatCompactDistance(routeDistance.pickupToDropoffMeters)}</strong></p>
+    <p><span>店舗まで（直線）</span><strong>${formatCompactDistance(routeDistance.toPickupMeters)}</strong></p>
+    <p><span>店舗 → 届け先（直線）</span><strong>${formatCompactDistance(routeDistance.pickupToDropoffMeters)}</strong></p>
     ${estimatedPoints === null ? '' : `<p><span>見込み</span><strong>+${estimatedPoints}pt</strong></p>`}
+  </section>
+  <section class="delivery-stops" aria-label="受取場所と届け先">
+    <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">1</span><div><span class="delivery-stop__label">受取場所</span><strong>${escape(order.store.name)}</strong>${order.pickupName === order.store.name ? '' : `<p>${escape(order.pickupName)}</p>`}</div></div>
+    <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">2</span><div><span class="delivery-stop__label">届け先</span><strong>${escape(order.dropoffName)}</strong></div></div>
   </section>
   ${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
     canOpenCurrentRoute: Boolean(currentBrowserLocation),
@@ -407,19 +454,37 @@ function showOrder(
   <details class="delivery-details">
     <summary>地点・注文の詳細</summary>
     <dl>
-      <dt>店舗</dt><dd>${order.store.name}</dd>
-      <dt>受取先</dt><dd>${order.pickupName}</dd>
+      <dt>店舗</dt><dd>${escape(order.store.name)}</dd>
+      <dt>受取先</dt><dd>${escape(order.pickupName)}</dd>
       <dt>受取座標</dt><dd><code>${formatCoordinate(order.store.latitude, order.store.longitude)}</code></dd>
-      <dt>届け先</dt><dd>${order.dropoffName}</dd>
+      <dt>届け先</dt><dd>${escape(order.dropoffName)}</dd>
       <dt>配達先座標</dt><dd><code>${formatCoordinate(order.dropoffLatitude, order.dropoffLongitude)}</code></dd>
-      <dt>進行状態</dt><dd>${statusLabel}</dd>
+      <dt>進行状態</dt><dd>${escape(statusLabel)}</dd>
       <dt>現在地 → 店舗</dt><dd>${formatDistance(routeDistance.toPickupMeters)}</dd>
       ${matchedDistanceToPickupMeters === null ? '' : `<dt>候補選定時の距離</dt><dd>${formatDistance(matchedDistanceToPickupMeters)}（直線）</dd>`}
       <dt>店舗 → 届け先</dt><dd>${formatDistance(routeDistance.pickupToDropoffMeters)}（直線）</dd>
-      <dt>${extraLabel}</dt><dd>${extraValue}</dd>
+      <dt>${escape(extraLabel)}</dt><dd>${escape(extraValue)}</dd>
       ${scoreBreakdownMarkup(estimatedPoints, scoreBreakdown)}
     </dl>
-  </details>`;
+  </details>`, order.id);
+}
+
+function renderActionDock() {
+  const view = DeliveryFlowUi.getActionView(state);
+  actionGuidance.textContent = view.guidance;
+  actionDestination.textContent = view.destination;
+  offerDeadline.textContent = view.deadline;
+  offerDeadline.classList.toggle('hidden', !view.deadline);
+  offerDeadline.classList.toggle('offer-deadline--expired', view.expired);
+  offerHasExpired = view.expired;
+  DeliveryFlowUi.updateMarkup(actions, DeliveryFlowUi.renderActions(view));
+  actions.querySelectorAll('button').forEach((element) => { element.disabled = isLoading; });
+  document.querySelector('#mapDestination').textContent = state.assignment || (state.driver.status === 'OFFERED' && state.offer)
+    ? view.destination : '今日も、安全な配達を。';
+  logoutButton.disabled = isLoading || state.driver.status !== 'OFFLINE';
+  logoutButton.dataset.alwaysDisabled = String(state.driver.status !== 'OFFLINE');
+  document.querySelector('#logoutHint').textContent = state.driver.status === 'OFFLINE'
+    ? 'この端末からログアウトできます。' : '勤務中です。退勤するとログアウトできます。';
 }
 
 function renderScore() {
@@ -524,22 +589,40 @@ function renderHistory() {
 }
 
 function render() {
-  workflow.classList.toggle('workflow--active-delivery', Boolean(state.assignment || state.offer));
+  workflow.classList.toggle('workflow--active-delivery', Boolean(state.assignment || (state.driver.status === 'OFFERED' && state.offer)));
   if (state.driver.status === 'OFFLINE') currentBrowserLocation = null;
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
+  document.querySelector('#driverStatus').dataset.status = state.driver.status;
   document.querySelector('#driverName').textContent = state.driver.name;
   document.querySelector('#driverId').textContent = `配達員ID: ${state.driver.id}`;
   document.querySelector('#shiftStartedAt').textContent = state.driver.shiftStartedAt
     ? `稼働開始: ${formatJapanTime(state.driver.shiftStartedAt)}`
     : '現在は退勤中です';
 
-  actions.innerHTML = '';
-  card.classList.add('hidden');
+  const activeOffer = state.driver.status === 'OFFERED' ? state.offer : null;
+  const nextDeliveryKey = state.assignment ? `assignment:${state.assignment.id}` : activeOffer ? `offer:${activeOffer.id}` : null;
+  if (nextDeliveryKey !== currentDeliveryKey) {
+    sheetScrollPositions.delivery = 0;
+    if (sheetView === 'delivery') sheetContent.scrollTop = 0;
+    if (currentDeliveryKey !== null) setMessage('');
+    currentDeliveryKey = nextDeliveryKey;
+  }
+  card.classList.toggle('hidden', !nextDeliveryKey);
+  document.querySelector('#idleCard').classList.toggle('hidden', Boolean(nextDeliveryKey));
+  document.querySelector('#idleHeading').textContent = state.driver.status === 'OFFLINE'
+    ? '今日の配達を始めましょう' : '次のオファーを待っています';
+  document.querySelector('#idleDescription').textContent = state.driver.status === 'OFFLINE'
+    ? '準備ができたら、下のボタンから稼働を開始してください。'
+    : 'オファーを確認すると、料金・受取場所・届け先がここに表示されます。';
+  if (!nextDeliveryKey) {
+    displayedOrder = null;
+    DeliveryFlowUi.updateMarkup(detail, '', '');
+  }
   renderScore();
   renderRanking();
   renderHistory();
   const currentWeather = state.simulator?.weatherCondition || 'CLEAR';
-  weatherCondition.value = currentWeather;
+  if (document.activeElement !== weatherCondition) weatherCondition.value = currentWeather;
   weatherSimulatorStatus.textContent = `現在: ${currentWeather === 'RAIN' ? '雨' : '晴れ'}`;
   updateLocationButton.disabled = isLoading || state.driver.status === 'OFFLINE';
   updateLocationButton.dataset.alwaysDisabled = String(state.driver.status === 'OFFLINE');
@@ -551,17 +634,7 @@ function render() {
     ? '退勤中のため現在地は保持していません。'
     : locationLabels[state.location.status];
 
-  if (state.driver.status === 'OFFLINE') {
-    actions.innerHTML = button('稼働を開始する', 'start');
-  }
-  if (state.driver.status === 'IDLE') {
-    actions.innerHTML = button('オファーを確認する', 'offer') + button('退勤する', 'end');
-  }
   if (state.driver.status === 'OFFERED' && state.offer) {
-    actions.innerHTML =
-      button('この配達を受諾する', `accept:${state.offer.id}`) +
-      button('このオファーを辞退する', `reject:${state.offer.id}`) +
-      button('オファーを辞退して退勤する', 'end');
     showOrder(
       state.offer.order,
       'オファー期限',
@@ -582,32 +655,8 @@ function render() {
       state.assignment.scoreBreakdown,
       state.assignment.routeDistance,
     );
-    if (!state.assignment.pickedUpAt) {
-      actions.innerHTML = button('受け取りました', `pickup:${state.assignment.id}`);
-    } else if (!state.assignment.deliveredAt) {
-      actions.innerHTML = button('配達完了しました', `complete:${state.assignment.id}`);
-    }
   }
-
-  actions.innerHTML += button(
-    state.driver.status === 'OFFLINE' ? 'この端末からログアウトする' : 'ログアウトするには先に退勤してください',
-    'logout',
-    state.driver.status !== 'OFFLINE',
-  );
-
-  if (!isLoading) {
-    const guidance = {
-      OFFLINE: '稼働を開始すると、新しいオファーを確認できます。',
-      IDLE: state.location.status === 'MISSING'
-        ? '現在地を更新すると、店舗に近い配達員からオファー候補になります。'
-        : '近い配達員へ送られたオファーを確認するか、退勤を選んでください。',
-      OFFERED: '内容と期限を確認して、受諾または辞退を選んでください。',
-      BUSY: state.assignment?.pickedUpAt
-        ? '配達先へ向かってください。到着して受け渡したら、配達完了を記録してください。'
-        : '店舗へ向かってください。商品を受け取ったら「受け取りました」を押してください。',
-    };
-    setMessage(guidance[state.driver.status]);
-  }
+  renderActionDock();
 }
 
 async function refresh(options = {}) {
@@ -672,11 +721,13 @@ async function performRefresh({ preserveMessage = false } = {}) {
     scoreState = score;
     rankingState = ranking;
     lastSuccessfulRefreshAt = Date.now();
-    render();
+    renderScore();
+    renderRanking();
+    renderHistory();
     connectRealtime();
-    if (!preserveMessage) setMessage('最新の配達状況を表示しています。', 'success');
+    if (message.dataset.source === 'refresh' || (!preserveMessage && message.classList.contains('message--info'))) setMessage('');
   } catch (error) {
-    setMessage(`読み込みに失敗しました。${error.message}`, 'error');
+    setMessage(`読み込みに失敗しました。${error.message}`, 'error', 'refresh');
   }
 }
 
@@ -684,6 +735,14 @@ authTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
     authView = tab.dataset.authView;
     setAuthView(authView);
+  });
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    authView = event.key === 'Home' ? 'login' : event.key === 'End' ? 'register'
+      : authView === 'login' ? 'register' : 'login';
+    setAuthView(authView);
+    document.querySelector(`[data-auth-view="${authView}"]`).focus();
   });
 });
 
@@ -743,11 +802,21 @@ loginForm.addEventListener('submit', async (event) => {
   }
 });
 
-actions.addEventListener('click', async (event) => {
-  const action = event.target.dataset.action;
+async function handleAction(event) {
+  const action = event.target.closest('button[data-action]')?.dataset.action;
   if (!action || isLoading) return;
+  if (action.startsWith('accept:') && DeliveryFlowUi.getActionView(state).expired) {
+    renderActionDock();
+    setMessage('オファーの期限が切れました。最新の状況を確認してください。', 'error');
+    return;
+  }
+  if (action === 'refresh') {
+    setLoading(true);
+    try { await refresh({ preserveMessage: true }); } finally { setLoading(false); }
+    return;
+  }
   const actionLabels = {
-    start: '稼働を開始', end: '退勤', offer: 'オファーの確認',
+    start: '稼働開始', end: '退勤', offer: 'オファーの確認',
     accept: 'オファーの受諾', reject: 'オファーの辞退',
     pickup: '荷物の受取', complete: '配達の完了', logout: 'ログアウト',
   };
@@ -773,6 +842,9 @@ actions.addEventListener('click', async (event) => {
     if (action.startsWith('pickup:')) await request(`/api/assignments/${action.split(':')[1]}/pickup`);
     if (action.startsWith('complete:')) actionResult = await request(`/api/assignments/${action.split(':')[1]}/complete`);
     await refresh({ preserveMessage: true });
+    if (['offer', 'accept', 'pickup', 'complete'].includes(action.split(':')[0])) {
+      setSheetView('delivery');
+    }
     const awardDetails = actionResult?.scoreAward?.breakdown
       ?.map((item) => `${item.label} +${item.points}`).join(' / ');
     setMessage(actionResult?.scoreAward
@@ -783,7 +855,9 @@ actions.addEventListener('click', async (event) => {
   } finally {
     setLoading(false);
   }
-});
+}
+actions.addEventListener('click', handleAction);
+logoutButton.addEventListener('click', handleAction);
 
 weatherSimulatorForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -906,8 +980,11 @@ window.addEventListener('beforeunload', () => {
 setBottomSheetState(bottomSheetState);
 refresh();
 setInterval(() => {
+  if (state?.offer && !isLoading && DeliveryFlowUi.getActionView(state).expired !== offerHasExpired) renderActionDock();
+}, 1000);
+setInterval(() => {
   const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;
   const safetyRefreshDue = Date.now() - lastSuccessfulRefreshAt >= 60_000;
-  if (!isLoading && (!realtimeConnected || safetyRefreshDue)) refresh();
+  if (!isLoading && (!realtimeConnected || safetyRefreshDue)) refresh({ preserveMessage: true });
 }, 10_000);
 
