@@ -9,7 +9,7 @@
     "start": "node --env-file=.env apps/server/src/main.js",
     "dev:postgres": "docker compose --env-file .env.postgres up --watch",
     "studio:postgres": "node scripts/studio-postgresql.js",
-    "check": "node --check apps/server/src/main.js && node --check apps/server/src/modules/location/location.js && node --check apps/server/src/modules/matching/matching.js && node --check apps/server/src/modules/realtime/realtime.js && node --check apps/server/src/modules/score/score-bonuses.js && node --check apps/web/public/route-preview.js && node --check apps/web/public/bottom-sheet.js && node --check apps/web/public/app.js && node --check scripts/studio-postgresql.js",
+    "check": "node --check apps/server/src/main.js && node --check apps/server/src/modules/location/location.js && node --check apps/server/src/modules/matching/matching.js && node --check apps/server/src/modules/realtime/realtime.js && node --check apps/server/src/modules/score/score-bonuses.js && node --check apps/web/public/route-preview.js && node --check apps/web/public/bottom-sheet.js && node --check apps/web/public/delivery-ui.js && node --check apps/web/public/app.js && node --check scripts/studio-postgresql.js",
     "test": "node --test",
     "load-test": "node scripts/load.js",
     "test:postgresql-smoke": "node scripts/postgresql-smoke.js",

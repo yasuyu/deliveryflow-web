@@ -623,6 +623,19 @@ test('ボトムシートのブラウザースクリプトを配信する', async
   assert.match(await response.text(), /calculateSnapHeights/);
 });
 
+test('配達操作のブラウザースクリプトを配信しホーム画面から読み込む', async () => {
+  const response = await fetch(`${baseUrl}/delivery-ui.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/javascript/);
+  assert.match(await response.text(), /DeliveryFlowUi/);
+
+  const homepage = await fetch(baseUrl);
+  assert.equal(homepage.status, 200);
+  const html = await homepage.text();
+  assert.match(html, /<script\s+src="\/delivery-ui\.js"><\/script>/);
+  assert.ok(html.indexOf('src="/delivery-ui.js"') < html.indexOf('src="/app.js"'));
+});
+
 test('1MBを超えるJSON本文は受け付けない', async () => {
   const response = await request('/api/drivers', {
     method: 'POST',

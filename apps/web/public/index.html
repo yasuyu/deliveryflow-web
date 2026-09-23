@@ -13,7 +13,6 @@
       <span><strong>DeliveryFlow</strong><small>配達員アプリ</small></span>
     </a>
     <div class="header-actions">
-      <span id="realtimeStatus" class="realtime-status hidden" role="status" aria-live="polite">接続中</span>
       <a class="header-link" href="/docs">API仕様</a>
     </div>
   </header>
@@ -61,15 +60,25 @@
     <div id="workflow" class="hidden map-shell">
       <section class="hero">
         <div><p class="eyebrow">DELIVERY LIFECYCLE</p><h2>正しい状態遷移で、<br>配達を完了する。</h2><p>元資料の状態遷移をブラウザ上で追える最小構成です。</p></div>
-        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small></aside>
+        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small><span id="realtimeStatus" class="realtime-status hidden" role="status" aria-live="polite">接続中</span></aside>
       </section>
-      <section class="flow"><span>CREATED</span><b>→</b><span>OFFERING</span><b>→</b><span>ASSIGNED</span><b>→</b><span>PICKED_UP</span><b>→</b><span>DELIVERED</span></section>
+      <div class="map-context"><span class="map-context__label">経路の模式表示 · 実地図ではありません</span><p id="mapDestination">今日も、安全な配達を。</p></div>
       <div id="bottomSheet" class="bottom-sheet" data-sheet-state="medium">
       <button id="bottomSheetHandle" class="bottom-sheet__handle" type="button" aria-controls="bottomSheet" aria-expanded="true">
         <span class="bottom-sheet__grip" aria-hidden="true"></span>
         <span id="bottomSheetHandleLabel">上にドラッグして詳細を広げる</span>
       </button>
-      <section id="shiftCard" class="card"><p class="eyebrow">DRIVER SHIFT</p><h2>今日の業務</h2><p id="message" class="message" role="status" aria-live="polite">読み込み中です。</p><div id="actions" aria-live="polite"></div></section>
+      <nav id="sheetNavigation" class="sheet-nav" role="tablist" aria-label="表示する情報">
+        <button id="deliveryTab" type="button" role="tab" aria-selected="true" aria-controls="deliveryPanel" data-sheet-view="delivery">配達</button>
+        <button id="activityTab" type="button" role="tab" aria-selected="false" aria-controls="activityPanel" data-sheet-view="activity" tabindex="-1">実績</button>
+        <button id="settingsTab" type="button" role="tab" aria-selected="false" aria-controls="settingsPanel" data-sheet-view="settings" tabindex="-1">設定</button>
+      </nav>
+      <div id="sheetContent" class="sheet-content">
+      <section id="deliveryPanel" class="sheet-panel" role="tabpanel" aria-labelledby="deliveryTab" tabindex="0">
+        <section id="idleCard" class="card delivery-empty"><span class="delivery-empty__icon" aria-hidden="true">↗</span><p class="eyebrow">READY FOR DELIVERY</p><h2 id="idleHeading">今日の配達を始めましょう</h2><p id="idleDescription">稼働を開始すると、オファーを確認できます。</p><button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button></section>
+        <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>今回の配達</h2><div id="deliveryDetail"></div></section>
+      </section>
+      <section id="settingsPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="settingsTab" tabindex="0">
       <section class="card location-card">
         <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
         <p>ボタンを押したときだけブラウザへ位置情報を依頼します。現在地は勤務中だけ保持し、退勤すると削除します。</p>
@@ -86,7 +95,10 @@
         </form>
         <p id="weatherSimulatorStatus" class="simulator-status">現在: 晴れ</p>
       </section>
-      <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>配達詳細</h2><div id="deliveryDetail"></div></section>
+      <section class="card account-card"><p class="eyebrow">ACCOUNT</p><h2>アカウント</h2><p id="logoutHint">退勤後にログアウトできます。</p><button id="logoutButton" type="button" class="button-secondary" data-action="logout">ログアウトする</button></section>
+      <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>現在地は更新ボタンを押したときだけ取得します。アプリ内の経路は模式表示です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
+      </section>
+      <section id="activityPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="activityTab" tabindex="0">
       <section class="card score-card">
         <p class="eyebrow">DRIVER SCORE</p><h2>配達スコア</h2>
         <div class="score-summary"><p><span>現在のスコア</span><strong id="currentScore">0</strong><small>直近14日</small></p><p><span>生涯スコア</span><strong id="lifetimeScore">0</strong><small>すべての配達</small></p></div>
@@ -132,12 +144,20 @@
         <p id="historyResultCount" class="history-result-count">表示結果 0件</p>
         <ol id="deliveryHistory" class="history-list"></ol>
       </section>
-      <section class="learnmo learn"><p class="eyebrow">LEARNING NOTE · BEARER</p><h2>Bearerトークンとは</h2><p>APIを呼ぶ人を識別する、推測困難な許可証です。ログイン時に発行され、ログアウトすると無効になります。</p></section>
+      </section>
+      </div>
+      <section id="shiftCard" class="action-dock" aria-label="次の操作">
+        <div class="action-dock__heading"><h2 id="actionGuidance">今日の業務</h2><span id="offerDeadline" class="offer-deadline hidden"></span></div>
+        <p id="actionDestination"></p>
+        <p id="message" class="message message--info" role="status" aria-live="polite"></p>
+        <div id="actions"></div>
+      </section>
       </div>
     </div>
   </main>
   <script src="/route-preview.js"></script>
   <script src="/bottom-sheet.js"></script>
+  <script src="/delivery-ui.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

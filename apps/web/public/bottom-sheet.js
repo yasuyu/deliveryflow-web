@@ -5,9 +5,9 @@
     return Math.min(maximum, Math.max(minimum, value));
   }
 
-  function calculateSnapHeights(viewportHeight, { mobile = false } = {}) {
+  function calculateSnapHeights(viewportHeight, { mobile = false, minimumContentHeight = 0 } = {}) {
     const height = Math.max(320, Number(viewportHeight) || 0);
-    const collapsed = mobile ? 128 : 136;
+    const collapsed = Math.max(mobile ? 128 : 136, minimumContentHeight);
     const chromeHeight = mobile ? 64 : 150;
     const minimumMapHeight = mobile ? 40 : 72;
     const expanded = Math.max(collapsed + 96, height - chromeHeight - minimumMapHeight);

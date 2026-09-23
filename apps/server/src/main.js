@@ -1034,6 +1034,7 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/route-preview.js') return serveFile(response, path.join(webPublicDirectory, 'route-preview.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/bottom-sheet.js') return serveFile(response, path.join(webPublicDirectory, 'bottom-sheet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/delivery-ui.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-ui.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, path.join(webPublicDirectory, 'style.css'), 'text/css; charset=utf-8');
 
   if (request.method === 'POST' && url.pathname === '/api/drivers') {
