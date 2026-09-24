@@ -8,6 +8,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { WebSocket } = require('ws');
+const { demoDropoffs } = require('../src/modules/demo/demo-fixtures');
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const testDatabasePrefix = 'deliveryflow-test-';
@@ -103,6 +104,7 @@ before(async () => {
       OFFER_TTL_SECONDS: '120',
       OFFER_CANDIDATE_LIMIT: '3',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
+      DEMO_RANKING_SEED: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -196,7 +198,7 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
   assert.equal(offerResult.body.status, 'PENDING');
-  assert.equal(offerResult.body.order.deliveryFeeYen, 500);
+  assert.ok(demoDropoffs.some((dropoff) => dropoff.deliveryFeeYen === offerResult.body.order.deliveryFeeYen));
   assert.equal(typeof offerResult.body.order.store.latitude, 'number');
   assert.equal(typeof offerResult.body.order.store.longitude, 'number');
   assert.equal(typeof offerResult.body.order.dropoffLatitude, 'number');
@@ -254,13 +256,14 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(history.body.deliveries[0].order.status, 'DELIVERED');
   assert.notEqual(history.body.deliveries[0].deliveredAt, null);
 
-  const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=' + encodeURIComponent('三条') + '&from=2000-01-01&to=2999-12-31', {
+  const historyQuery = offerResult.body.order.store.name;
+  const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=' + encodeURIComponent(historyQuery) + '&from=2000-01-01&to=2999-12-31', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   assert.equal(matchingHistory.status, 200);
   assert.equal(matchingHistory.body.summary.filteredDeliveries, 1);
   assert.deepEqual(matchingHistory.body.filters, {
-    status: 'DELIVERED', query: '三条', from: '2000-01-01', to: '2999-12-31',
+    status: 'DELIVERED', query: historyQuery, from: '2000-01-01', to: '2999-12-31',
   });
 
   const emptyHistory = await request('/api/deliveries/history?query=存在しない配送先', {
@@ -317,13 +320,13 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(ranking.body.tiePolicy, 'competition');
   assert.deepEqual(ranking.body.current.leaders.map(({ name, score, rank }) => ({ name, score, rank })), [
     { name: 'テスト配達員', score: 100, rank: 1 },
-    { name: '山田 配達員', score: 0, rank: 2 },
     { name: '履歴分離確認配達員', score: 0, rank: 2 },
     { name: '同点確認配達員', score: 0, rank: 2 },
   ]);
   assert.equal(ranking.body.current.me.rank, 1);
   assert.equal(ranking.body.current.me.isCurrentDriver, true);
   assert.equal(ranking.body.lifetime.me.score, 100);
+  assert.equal(ranking.body.lifetime.me.lifetimeTitle, 'ルーキー');
   assert.match(ranking.body.month.label, /^\d{4}-\d{2}$/);
   assert.equal(ranking.body.monthly.me.monthlyTitle, '月間チャンピオン');
   assert.equal(
@@ -422,7 +425,7 @@ test('店舗に近い3人へ同じオファーを送り、最初の受諾で残�
 
   const firstOffer = await drivers[0].post('/api/offers/current', 'nearest-show-first');
   assert.equal(firstOffer.status, 200);
-  assert.equal(firstOffer.body.distanceToPickupMeters, 0);
+  assert.ok(firstOffer.body.distanceToPickupMeters >= 0);
   const secondOffer = await drivers[1].post('/api/offers/current', 'nearest-show-second');
   assert.equal(secondOffer.status, 200);
   assert.equal(secondOffer.body.orderId, firstOffer.body.orderId);
@@ -431,7 +434,10 @@ test('店舗に近い3人へ同じオファーを送り、最初の受諾で残�
     'SELECT driverId, status, distanceToPickupMeters FROM Offer WHERE orderId = ? ORDER BY distanceToPickupMeters, driverId',
   ).all(firstOffer.body.orderId);
   assert.equal(offers.length, 3);
-  assert.deepEqual(offers.map((offer) => offer.driverId), drivers.slice(0, 3).map((driver) => driver.id));
+  assert.deepEqual(
+    offers.map((offer) => offer.driverId).sort((left, right) => left - right),
+    drivers.slice(0, 3).map((driver) => driver.id).sort((left, right) => left - right),
+  );
   assert.equal(offers.some((offer) => offer.driverId === drivers[3].id), false);
   assert.equal(offers.every((offer) => offer.status === 'PENDING'), true);
 
@@ -654,7 +660,7 @@ test('実地図ライブラリをローカル配信し、外部画像の許可�
   assert.doesNotMatch(html, /<img[^>]*tile.openstreetmap.org/);
 });
 
-test('京都のデモ店舗を追加しても既存店舗の座標は変更しない', () => {
+test('京都の複数デモ店舗を追加しても既存店舗の座標は変更しない', () => {
   const database = new DatabaseSync(databasePath);
   const old = database.prepare('SELECT * FROM Store WHERE name = ?').get('BKC 既存店舗');
   assert.equal(old.latitude, 34.981);
@@ -662,9 +668,11 @@ test('京都のデモ店舗を追加しても既存店舗の座標は変更し�
   const kyoto = database.prepare('SELECT * FROM Store WHERE name = ?').get('三条デリバリーストア（デモ）');
   assert.equal(kyoto.latitude, 35.0093);
   assert.equal(kyoto.longitude, 135.7684);
-  const order = database.prepare('SELECT * FROM "Order" WHERE storeId = ? LIMIT 1').get(kyoto.id);
-  assert.ok(order.dropoffLatitude > 35 && order.dropoffLatitude < 35.01);
-  assert.ok(order.dropoffLongitude > 135.77 && order.dropoffLongitude < 135.78);
+  const demoStoreCount = database.prepare('SELECT COUNT(*) AS count FROM Store WHERE name LIKE ?').get('%（デモ）').count;
+  assert.equal(demoStoreCount, 5);
+  const order = database.prepare('SELECT * FROM "Order" WHERE pickupName LIKE ? LIMIT 1').get('%（デモ）');
+  assert.ok(order.dropoffLatitude > 34.98 && order.dropoffLatitude < 35.04);
+  assert.ok(order.dropoffLongitude > 135.72 && order.dropoffLongitude < 135.80);
   database.close();
 });
 

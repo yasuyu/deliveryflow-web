@@ -21,6 +21,7 @@ RUN DATABASE_PROVIDER=postgresql \
 COPY --chown=node:node apps/server/src ./apps/server/src
 COPY --chown=node:node apps/web/public ./apps/web/public
 COPY --chown=node:node docs ./docs
+COPY --chown=node:node scripts/demo-data.js ./scripts/demo-data.js
 COPY apps/server/docker-entrypoint.sh ./
 
 RUN mkdir /data && chown node:node /data

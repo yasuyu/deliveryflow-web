@@ -565,8 +565,11 @@ function renderScore() {
 
 function renderRankingPeriod(period, list, meElement) {
   list.replaceChildren();
+  const meLabels = period.me
+    ? [period.me.monthlyTitle, period.me.lifetimeTitle].filter(Boolean)
+    : [];
   meElement.textContent = period.me
-    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント${period.me.monthlyTitle ? ` · ${period.me.monthlyTitle}` : ''}`
+    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント${meLabels.length ? ` · ${meLabels.join(' · ')}` : ''}`
     : 'あなたの順位はまだありません。';
 
   for (const entry of period.leaders) {
@@ -582,6 +585,7 @@ function renderRankingPeriod(period, list, meElement) {
       name.textContent += '（あなた）';
     }
     if (entry.monthlyTitle) name.textContent += ` · ${entry.monthlyTitle}`;
+    if (entry.lifetimeTitle) name.textContent += ` · ${entry.lifetimeTitle}`;
     item.append(rank, name, score);
     list.append(item);
   }

@@ -11,6 +11,13 @@ const {
 const { distanceMeters, locationStatus, validateLocation } = require('./modules/location/location');
 const { nearestDrivers } = require('./modules/matching/matching');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
+const {
+  chooseDemoRoute,
+  demoDropoffs,
+  demoRouteKey,
+  demoStores,
+  ensureHackathonDemo,
+} = require('./modules/demo/demo-fixtures');
 
 const maximumJsonBodyBytes = 1_000_000;
 const scrypt = promisify(scryptCallback);
@@ -18,12 +25,7 @@ const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const scoreWindowDays = 14;
 const rankingLimit = 10;
-const demoStore = {
-  name: '三条デリバリーストア（デモ）',
-  address: '京都市中京区 三条・河原町周辺（学習用）',
-  latitude: 35.0093,
-  longitude: 135.7684,
-};
+const recentDemoRouteLimit = 6;
 const japanUtcOffsetMilliseconds = 9 * 60 * 60 * 1000;
 const monthlyRankingTitles = new Map([
   [1, '月間チャンピオン'],
@@ -353,7 +355,20 @@ async function createNextOffer(driver, client = prisma) {
 
   if (locationStatus(driver) !== 'AVAILABLE') return;
 
-  const store = await client.store.findFirst({ where: demoStore, orderBy: { id: 'asc' } });
+  const recentOrders = await client.order.findMany({
+    where: {
+      pickupName: { in: demoStores.map((store) => store.name) },
+      dropoffName: { in: demoDropoffs.map((dropoff) => dropoff.name) },
+    },
+    select: { pickupName: true, dropoffName: true },
+    orderBy: { id: 'desc' },
+    take: recentDemoRouteLimit,
+  });
+  const route = chooseDemoRoute(
+    recentOrders.map((order) => demoRouteKey(order.pickupName, order.dropoffName)),
+  );
+  const store = await client.store.findFirst({ where: route.store, orderBy: { id: 'asc' } });
+  if (!store) return;
   const eligibleDrivers = await client.driver.findMany({
     where: {
       status: 'IDLE',
@@ -366,7 +381,6 @@ async function createNextOffer(driver, client = prisma) {
   const candidates = nearestDrivers(eligibleDrivers, store, offerCandidateLimit);
   if (!candidates.some((candidate) => candidate.id === driver.id)) return;
 
-  const number = (await client.order.count()) + 1;
   const rules = await client.scoreRule.findMany();
   const scoreSnapshot = buildScoreSnapshot(rules, {
     weatherCondition: simulatedWeatherCondition,
@@ -376,10 +390,10 @@ async function createNextOffer(driver, client = prisma) {
     data: {
       storeId: store.id,
       pickupName: store.name,
-      dropoffName: `東山レジデンス ${number}号館（デモ）`,
-      deliveryFeeYen: 500,
-      dropoffLatitude: 35.003 + (number % 5) * 0.0004,
-      dropoffLongitude: 135.774 + (number % 7) * 0.0004,
+      dropoffName: route.dropoff.name,
+      deliveryFeeYen: route.dropoff.deliveryFeeYen,
+      dropoffLatitude: route.dropoff.latitude,
+      dropoffLongitude: route.dropoff.longitude,
       status: 'OFFERING',
     },
   });
@@ -441,20 +455,17 @@ async function ensureSeed() {
     });
   }
 
-  let driver = await currentDriver();
-  if (!driver) {
-    driver = await prisma.driver.create({ data: { name: '山田 配達員' } });
-  }
-  // Add the Kyoto fixture without changing stores referenced by existing orders.
-  if (!await prisma.store.findFirst({ where: demoStore })) {
-    await prisma.store.create({ data: demoStore });
-  }
+  await ensureHackathonDemo(prisma, {
+    includeRankings: process.env.DEMO_RANKING_SEED !== 'false',
+  });
+  const driver = await currentDriver();
 
   await prisma.offer.updateMany({
     where: { status: 'PENDING', expiresAt: null },
     data: { expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
   });
 
+  if (!driver) return;
   const active = await prisma.assignment.count({
     where: { driverId: driver.id, deliveredAt: null },
   });
@@ -575,6 +586,7 @@ function buildRanking(drivers, scoresByDriverId, currentDriverId) {
       driverId: driver.id,
       name: driver.name,
       score: scoresByDriverId.get(driver.id) || 0,
+      lifetimeTitle: buildDriverTitle(driver.score).current.name,
     }))
     .sort((left, right) => right.score - left.score || left.driverId - right.driverId);
 
