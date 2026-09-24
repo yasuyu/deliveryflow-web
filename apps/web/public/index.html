@@ -72,7 +72,7 @@
         <div id="mapConsent" class="map-consent">
           <svg class="ui-icon" aria-hidden="true"><use href="#icon-pin"/></svg>
           <h2>配達エリアを地図で確認</h2>
-          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。現在地は自動取得しません。</p>
+          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。現在地は更新ボタンを押すまで取得・表示しません。</p>
           <button id="enableMap" type="button">実地図を表示する</button>
           <small>無料・APIキー不要</small>
         </div>
@@ -94,18 +94,17 @@
         <span class="bottom-sheet__grip" aria-hidden="true"></span>
         <span id="bottomSheetHandleLabel">上にドラッグして詳細を広げる</span>
       </button>
-      <nav id="sheetNavigation" class="sheet-nav" role="tablist" aria-label="表示する情報">
-        <button id="deliveryTab" type="button" role="tab" aria-selected="true" aria-controls="deliveryPanel" data-sheet-view="delivery">配達</button>
-        <button id="activityTab" type="button" role="tab" aria-selected="false" aria-controls="activityPanel" data-sheet-view="activity" tabindex="-1">実績</button>
-        <button id="settingsTab" type="button" role="tab" aria-selected="false" aria-controls="settingsPanel" data-sheet-view="settings" tabindex="-1">設定</button>
-      </nav>
+      <div id="sheetViewBar" class="sheet-view-bar hidden">
+        <button id="returnToDelivery" type="button" class="sheet-view-bar__back" aria-label="配達画面に戻る">← 配達画面へ戻る</button>
+        <strong id="sheetViewTitle"></strong>
+      </div>
       <div id="sheetContent" class="sheet-content">
-      <section id="deliveryPanel" class="sheet-panel" role="tabpanel" aria-labelledby="deliveryTab" tabindex="0">
+      <section id="deliveryPanel" class="sheet-panel" role="region" aria-label="配達" tabindex="0">
         <section id="idleCard" class="card delivery-empty"><span class="delivery-empty__icon" aria-hidden="true">↗</span><p class="eyebrow">READY FOR DELIVERY</p><h2 id="idleHeading">今日の配達を始めましょう</h2><p id="idleDescription">稼働を開始すると、オファーを確認できます。</p><button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button></section>
         <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>今回の配達</h2><div id="deliveryDetail"></div></section>
       </section>
-      <section id="settingsPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="settingsTab" tabindex="0">
-      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。現在地は自動取得しません。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
+      <section id="settingsPanel" class="sheet-panel hidden" role="region" aria-label="設定" tabindex="0">
+      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。現在地は更新ボタンを押すまで取得・表示しません。更新後は現在地を含む周辺の地図タイルを読み込みます。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
       <section class="card location-card">
         <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
         <p>ボタンを押したときだけブラウザへ位置情報を依頼します。現在地は勤務中だけ保持し、退勤すると削除します。</p>
@@ -125,7 +124,7 @@
       <section class="card account-card"><p class="eyebrow">ACCOUNT</p><h2>アカウント</h2><p><strong id="driverName">-</strong> · <span id="driverId">配達員ID: -</span></p><p id="shiftStartedAt"></p><p id="logoutHint">退勤後にログアウトできます。</p><button id="logoutButton" type="button" class="button-secondary" data-action="logout">ログアウトする</button></section>
       <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>現在地は更新ボタンを押したときだけ取得します。地図上の点線は直線です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
       </section>
-      <section id="activityPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="activityTab" tabindex="0">
+      <section id="activityPanel" class="sheet-panel hidden" role="region" aria-label="実績・ランキング" tabindex="0">
       <section class="card score-card">
         <p class="eyebrow">DRIVER SCORE</p><h2>配達スコア</h2>
         <div class="score-summary"><p><span>現在のスコア</span><strong id="currentScore">0</strong><small>直近14日</small></p><p><span>生涯スコア</span><strong id="lifetimeScore">0</strong><small>すべての配達</small></p></div>
