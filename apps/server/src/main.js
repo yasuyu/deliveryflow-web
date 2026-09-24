@@ -18,6 +18,12 @@ const loginAttemptWindowMilliseconds = 15 * 60 * 1000;
 const maximumLoginFailures = 5;
 const scoreWindowDays = 14;
 const rankingLimit = 10;
+const demoStore = {
+  name: '三条デリバリーストア（デモ）',
+  address: '京都市中京区 三条・河原町周辺（学習用）',
+  latitude: 35.0093,
+  longitude: 135.7684,
+};
 const japanUtcOffsetMilliseconds = 9 * 60 * 60 * 1000;
 const monthlyRankingTitles = new Map([
   [1, '月間チャンピオン'],
@@ -129,9 +135,9 @@ function metricsBody() {
 
 function securityHeaders() {
   return {
-    'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; style-src 'self'; font-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     'Cross-Origin-Opener-Policy': 'same-origin',
-    'Referrer-Policy': 'no-referrer',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
   };
@@ -347,7 +353,7 @@ async function createNextOffer(driver, client = prisma) {
 
   if (locationStatus(driver) !== 'AVAILABLE') return;
 
-  const store = await client.store.findFirst();
+  const store = await client.store.findFirst({ where: demoStore, orderBy: { id: 'asc' } });
   const eligibleDrivers = await client.driver.findMany({
     where: {
       status: 'IDLE',
@@ -370,10 +376,10 @@ async function createNextOffer(driver, client = prisma) {
     data: {
       storeId: store.id,
       pickupName: store.name,
-      dropoffName: `プリズムハウス ${number}号館`,
+      dropoffName: `東山レジデンス ${number}号館（デモ）`,
       deliveryFeeYen: 500,
-      dropoffLatitude: 34.978 + (number % 5) * 0.0004,
-      dropoffLongitude: 135.968 + (number % 7) * 0.0004,
+      dropoffLatitude: 35.003 + (number % 5) * 0.0004,
+      dropoffLongitude: 135.774 + (number % 7) * 0.0004,
       status: 'OFFERING',
     },
   });
@@ -438,9 +444,10 @@ async function ensureSeed() {
   let driver = await currentDriver();
   if (!driver) {
     driver = await prisma.driver.create({ data: { name: '山田 配達員' } });
-    await prisma.store.create({
-      data: { name: 'BKC カフェ', address: '立命館大学 BKC' },
-    });
+  }
+  // Add the Kyoto fixture without changing stores referenced by existing orders.
+  if (!await prisma.store.findFirst({ where: demoStore })) {
+    await prisma.store.create({ data: demoStore });
   }
 
   await prisma.offer.updateMany({
@@ -1035,6 +1042,9 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/bottom-sheet.js') return serveFile(response, path.join(webPublicDirectory, 'bottom-sheet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/delivery-ui.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-ui.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/delivery-map.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-map.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/vendor/leaflet.js') return serveFile(response, require.resolve('leaflet/dist/leaflet.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/vendor/leaflet.css') return serveFile(response, require.resolve('leaflet/dist/leaflet.css'), 'text/css; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, path.join(webPublicDirectory, 'style.css'), 'text/css; charset=utf-8');
 
   if (request.method === 'POST' && url.pathname === '/api/drivers') {

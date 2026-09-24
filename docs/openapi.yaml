@@ -67,8 +67,8 @@ paths:
               type: object
               required: [latitude, longitude]
               properties:
-                latitude: { type: number, minimum: -90, maximum: 90, example: 34.98 }
-                longitude: { type: number, minimum: -180, maximum: 180, example: 135.96 }
+                latitude: { type: number, minimum: -90, maximum: 90, example: 35.009 }
+                longitude: { type: number, minimum: -180, maximum: 180, example: 135.768 }
                 accuracyMeters: { type: number, minimum: 0, maximum: 100000, example: 12 }
       responses:
         '200':
@@ -258,8 +258,8 @@ components:
         pickupName: { type: string }
         dropoffName: { type: string }
         deliveryFeeYen: { type: integer, minimum: 0, example: 500 }
-        dropoffLatitude: { type: number, example: 34.978 }
-        dropoffLongitude: { type: number, example: 135.968 }
+        dropoffLatitude: { type: number, example: 35.0034 }
+        dropoffLongitude: { type: number, example: 135.7744 }
         status: { type: string, enum: [CREATED, OFFERING, ASSIGNED, PICKED_UP, DELIVERED] }
         store:
           type: object
@@ -268,8 +268,8 @@ components:
             id: { type: integer }
             name: { type: string }
             address: { type: string }
-            latitude: { type: number, example: 34.981 }
-            longitude: { type: number, example: 135.962 }
+            latitude: { type: number, example: 35.0093 }
+            longitude: { type: number, example: 135.7684 }
     LocationSummary:
       type: object
       required: [status, updatedAt, accuracyMeters]

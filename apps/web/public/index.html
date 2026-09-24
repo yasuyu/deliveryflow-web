@@ -2,11 +2,20 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>DeliveryFlow 配達員アプリ</title>
+  <link rel="stylesheet" href="/vendor/leaflet.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-bike" viewBox="0 0 24 24"><circle cx="5" cy="16" r="4"/><circle cx="19" cy="16" r="4"/><path d="m5 16 5-9 5 9H5l5-9h6l3 9M8 7H6m10 0-1-3h3"/></symbol>
+    <symbol id="icon-store" viewBox="0 0 24 24"><path d="M3 10v11h18V10M2 6l2-4h16l2 4v4a3 3 0 0 1-5 2 3 3 0 0 1-5 0 3 3 0 0 1-5 0 3 3 0 0 1-5-2V6Zm0 0h20M9 21v-6h6v6"/></symbol>
+    <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="icon-yen" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8 7 4 5 4-5m-4 5v6m-4-5h8m-8 3h8"/></symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="icon-fit" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></symbol>
+  </svg>
   <header class="app-header">
     <a class="brand" href="/" aria-label="DeliveryFlow ホーム">
       <span class="brand__mark" aria-hidden="true">D</span>
@@ -58,12 +67,29 @@
     </section>
 
     <div id="workflow" class="hidden map-shell">
-      <section class="hero">
-        <div><p class="eyebrow">DELIVERY LIFECYCLE</p><h2>正しい状態遷移で、<br>配達を完了する。</h2><p>元資料の状態遷移をブラウザ上で追える最小構成です。</p></div>
-        <aside><span>現在の稼働状態</span><strong id="driverStatus">-</strong><small id="driverName">-</small><small id="driverId">配達員ID: -</small><small id="shiftStartedAt"></small><span id="realtimeStatus" class="realtime-status hidden" role="status" aria-live="polite">接続中</span></aside>
+      <div id="mapStage" class="map-stage">
+        <div id="deliveryMap" class="delivery-map" role="region" aria-label="店舗と配達先の地図"></div>
+        <div id="mapConsent" class="map-consent">
+          <svg class="ui-icon" aria-hidden="true"><use href="#icon-pin"/></svg>
+          <h2>配達エリアを地図で確認</h2>
+          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。現在地は自動取得しません。</p>
+          <button id="enableMap" type="button">実地図を表示する</button>
+          <small>無料・APIキー不要</small>
+        </div>
+        <div id="mapTools" class="map-tools hidden">
+          <button id="fitMap" type="button" aria-label="受取場所と配達先を地図に収める" title="配達エリアを表示"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fit"/></svg></button>
+        </div>
+        <p id="mapNote" class="map-note hidden">点線は直線 · 地点はデモ用</p>
+        <p id="mapError" class="map-error hidden" role="status">地図を読み込めません。接続を確認してください。配達操作は引き続き使えます。</p>
+      </div>
+      <section class="ride-status" aria-label="配達状況">
+        <svg class="ui-icon ride-status__bike" aria-hidden="true"><use href="#icon-bike"/></svg>
+        <div class="ride-status__text"><strong id="driverStatus">-</strong><span id="rideGuidance">今日も、安全な配達を。</span></div>
+        <button class="ride-score" type="button" data-open-view="activity" aria-label="スコアと配達実績を開く"><span>現在<b id="mapCurrentScore">0</b></span><span>累計<b id="mapLifetimeScore">0</b></span></button>
+        <button class="ride-menu" type="button" data-open-view="settings" aria-label="設定を開く"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
+        <span id="realtimeStatus" class="realtime-status hidden" role="status" aria-live="polite">接続中</span>
       </section>
-      <div class="map-context"><span class="map-context__label">経路の模式表示 · 実地図ではありません</span><p id="mapDestination">今日も、安全な配達を。</p></div>
-      <div id="bottomSheet" class="bottom-sheet" data-sheet-state="medium">
+      <div id="bottomSheet" class="bottom-sheet" data-sheet-state="collapsed">
       <button id="bottomSheetHandle" class="bottom-sheet__handle" type="button" aria-controls="bottomSheet" aria-expanded="true">
         <span class="bottom-sheet__grip" aria-hidden="true"></span>
         <span id="bottomSheetHandleLabel">上にドラッグして詳細を広げる</span>
@@ -79,6 +105,7 @@
         <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>今回の配達</h2><div id="deliveryDetail"></div></section>
       </section>
       <section id="settingsPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="settingsTab" tabindex="0">
+      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。現在地は自動取得しません。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
       <section class="card location-card">
         <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
         <p>ボタンを押したときだけブラウザへ位置情報を依頼します。現在地は勤務中だけ保持し、退勤すると削除します。</p>
@@ -95,8 +122,8 @@
         </form>
         <p id="weatherSimulatorStatus" class="simulator-status">現在: 晴れ</p>
       </section>
-      <section class="card account-card"><p class="eyebrow">ACCOUNT</p><h2>アカウント</h2><p id="logoutHint">退勤後にログアウトできます。</p><button id="logoutButton" type="button" class="button-secondary" data-action="logout">ログアウトする</button></section>
-      <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>現在地は更新ボタンを押したときだけ取得します。アプリ内の経路は模式表示です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
+      <section class="card account-card"><p class="eyebrow">ACCOUNT</p><h2>アカウント</h2><p><strong id="driverName">-</strong> · <span id="driverId">配達員ID: -</span></p><p id="shiftStartedAt"></p><p id="logoutHint">退勤後にログアウトできます。</p><button id="logoutButton" type="button" class="button-secondary" data-action="logout">ログアウトする</button></section>
+      <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>現在地は更新ボタンを押したときだけ取得します。地図上の点線は直線です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
       </section>
       <section id="activityPanel" class="sheet-panel hidden" role="tabpanel" aria-labelledby="activityTab" tabindex="0">
       <section class="card score-card">
@@ -147,8 +174,9 @@
       </section>
       </div>
       <section id="shiftCard" class="action-dock" aria-label="次の操作">
-        <div class="action-dock__heading"><h2 id="actionGuidance">今日の業務</h2><span id="offerDeadline" class="offer-deadline hidden"></span></div>
+        <div class="action-dock__heading"><svg class="ui-icon action-dock__icon" aria-hidden="true"><use id="actionIcon" href="#icon-bike"/></svg><h2 id="actionGuidance">今日の業務</h2><span id="offerDeadline" class="offer-deadline hidden"></span></div>
         <p id="actionDestination"></p>
+        <div id="compactDelivery" class="compact-delivery hidden"></div>
         <p id="message" class="message message--info" role="status" aria-live="polite"></p>
         <div id="actions"></div>
       </section>
@@ -158,6 +186,8 @@
   <script src="/route-preview.js"></script>
   <script src="/bottom-sheet.js"></script>
   <script src="/delivery-ui.js"></script>
+  <script src="/vendor/leaflet.js"></script>
+  <script src="/delivery-map.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
