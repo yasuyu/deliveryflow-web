@@ -75,7 +75,19 @@
     }
   }
 
-  const api = { escapeHtml, getActionView, renderActions, updateMarkup };
+  function renderCompactOrder(order) {
+    if (!order) return '';
+    const coordinate = (lat, lng) => typeof lat === 'number' && typeof lng === 'number'
+      && Number.isFinite(lat) && Number.isFinite(lng)
+      ? lat.toFixed(4) + ', ' + lng.toFixed(4) : '座標未設定';
+    const icon = (name) => '<svg class="ui-icon" aria-hidden="true"><use href="#icon-' + name + '"/></svg>';
+    const row = (name, label, value, sub = '') => '<div class="compact-delivery__row"><dt>' + icon(name) + '<span>' + label
+      + '</span></dt><dd><strong>' + escapeHtml(value) + '</strong>' + (sub ? '<small>' + escapeHtml(sub) + '</small>' : '') + '</dd></div>';
+    return '<dl>' + row('store', '受け取り場所', order.pickupName || order.store.name, coordinate(order.store.latitude, order.store.longitude))
+      + row('pin', '配達先', order.dropoffName, coordinate(order.dropoffLatitude, order.dropoffLongitude))
+      + row('yen', '報酬', '¥' + Number(order.deliveryFeeYen).toLocaleString('ja-JP')) + '</dl>';
+  }
+  const api = { escapeHtml, getActionView, renderActions, updateMarkup, renderCompactOrder };
   root.DeliveryFlowUi = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window === 'undefined' ? globalThis : window));

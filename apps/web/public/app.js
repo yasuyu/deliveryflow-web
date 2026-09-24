@@ -51,6 +51,24 @@ const logoutButton = document.querySelector('#logoutButton');
 const actionGuidance = document.querySelector('#actionGuidance');
 const actionDestination = document.querySelector('#actionDestination');
 const offerDeadline = document.querySelector('#offerDeadline');
+const compactDelivery = document.querySelector('#compactDelivery');
+const deliveryMap = DeliveryFlowMap.create({
+  canvas: document.querySelector('#deliveryMap'), consent: document.querySelector('#mapConsent'),
+  tools: document.querySelector('#mapTools'), note: document.querySelector('#mapNote'),
+  error: document.querySelector('#mapError'), toggle: document.querySelector('#toggleMap'),
+});
+document.querySelector('#enableMap').addEventListener('click', () => deliveryMap.enable());
+document.querySelector('#fitMap').addEventListener('click', () => deliveryMap.overview());
+document.querySelector('#toggleMap').addEventListener('click', () => {
+  if (deliveryMap.isEnabled()) {
+    deliveryMap.disable();
+    return;
+  }
+  setSheetView('delivery');
+  setBottomSheetState('collapsed');
+  deliveryMap.enable();
+  bottomSheetHandle.focus({ preventScroll: true });
+});
 let sheetView = 'delivery';
 let currentDeliveryKey = null;
 let offerHasExpired = false;
@@ -82,7 +100,7 @@ let realtimeRefreshQueued = false;
 let lastSuccessfulRefreshAt = 0;
 let pageIsUnloading = false;
 let refreshPromise = null;
-let bottomSheetState = 'medium';
+let bottomSheetState = 'collapsed';
 let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
 
@@ -100,6 +118,8 @@ function setBottomSheetState(nextState, { announce = false } = {}) {
   bottomSheetState = nextState;
   bottomSheet.style.setProperty('--sheet-height', `${snapHeights[nextState]}px`);
   bottomSheet.dataset.sheetState = nextState;
+  workflow.dataset.sheetState = nextState;
+  deliveryMap.refitAfterResize();
   bottomSheetHandle.setAttribute('aria-expanded', String(nextState !== 'collapsed'));
   const labels = {
     collapsed: '上にドラッグして詳細を表示',
@@ -188,10 +208,14 @@ window.visualViewport?.addEventListener('resize', () => setBottomSheetState(bott
 new ResizeObserver(() => {
   if (!bottomSheetDrag && !workflow.classList.contains('hidden')) setBottomSheetState(bottomSheetState);
 }).observe(shiftCard);
+new ResizeObserver(() => {
+  workflow.style.setProperty('--visible-sheet-height', `${Math.ceil(bottomSheet.getBoundingClientRect().height)}px`);
+}).observe(bottomSheet);
 
 function setSheetView(view, { focus = false } = {}) {
   sheetScrollPositions[sheetView] = sheetContent.scrollTop;
   sheetView = view;
+  bottomSheet.dataset.sheetView = view;
   sheetTabs.forEach((tab) => {
     const selected = tab.dataset.sheetView === view;
     tab.setAttribute('aria-selected', String(selected));
@@ -213,6 +237,12 @@ sheetTabs.forEach((tab, index) => {
   });
 });
 document.querySelector('[data-open-settings]').addEventListener('click', () => setSheetView('settings', { focus: true }));
+document.querySelectorAll('[data-open-view]').forEach((button) => {
+  button.addEventListener('click', () => {
+    setBottomSheetState('expanded');
+    setSheetView(button.dataset.openView, { focus: true });
+  });
+});
 
 function setMessage(text, kind = 'info', source = 'action') {
   message.textContent = text;
@@ -473,14 +503,21 @@ function renderActionDock() {
   const view = DeliveryFlowUi.getActionView(state);
   actionGuidance.textContent = view.guidance;
   actionDestination.textContent = view.destination;
+  actionDestination.classList.toggle('hidden', Boolean(displayedOrder));
+  document.querySelector('#actionIcon').setAttribute('href', displayedOrder
+    ? state.assignment?.pickedUpAt ? '#icon-pin' : '#icon-store' : '#icon-bike');
+  compactDelivery.classList.toggle('hidden', !displayedOrder);
+  DeliveryFlowUi.updateMarkup(compactDelivery, DeliveryFlowUi.renderCompactOrder(displayedOrder), displayedOrder?.id);
+  document.querySelector('#rideGuidance').textContent = state.assignment
+    ? state.assignment.pickedUpAt ? '配達先へ向かっています' : '店舗へ向かっています'
+    : state.driver.status === 'OFFERED' ? '新しい配達が届いています'
+      : state.driver.status === 'IDLE' ? '京都で、次の配達を。' : '今日も、安全な配達を。';
   offerDeadline.textContent = view.deadline;
   offerDeadline.classList.toggle('hidden', !view.deadline);
   offerDeadline.classList.toggle('offer-deadline--expired', view.expired);
   offerHasExpired = view.expired;
   DeliveryFlowUi.updateMarkup(actions, DeliveryFlowUi.renderActions(view));
   actions.querySelectorAll('button').forEach((element) => { element.disabled = isLoading; });
-  document.querySelector('#mapDestination').textContent = state.assignment || (state.driver.status === 'OFFERED' && state.offer)
-    ? view.destination : '今日も、安全な配達を。';
   logoutButton.disabled = isLoading || state.driver.status !== 'OFFLINE';
   logoutButton.dataset.alwaysDisabled = String(state.driver.status !== 'OFFLINE');
   document.querySelector('#logoutHint').textContent = state.driver.status === 'OFFLINE'
@@ -488,6 +525,8 @@ function renderActionDock() {
 }
 
 function renderScore() {
+  document.querySelector('#mapCurrentScore').textContent = String(scoreState.currentScore);
+  document.querySelector('#mapLifetimeScore').textContent = String(scoreState.lifetimeScore);
   currentScore.textContent = String(scoreState.currentScore);
   lifetimeScore.textContent = String(scoreState.lifetimeScore);
   currentTitle.textContent = scoreState.title.current.name;
@@ -657,6 +696,7 @@ function render() {
     );
   }
   renderActionDock();
+  deliveryMap.update(displayedOrder);
 }
 
 async function refresh(options = {}) {
@@ -679,6 +719,8 @@ async function refresh(options = {}) {
 
 async function performRefresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
+    deliveryMap.disable();
+    currentBrowserLocation = null;
     disconnectRealtime();
     loginForm.elements.driverId.value = localStorage.getItem('deliveryFlowDriverId') || '';
     if (registrationCard.classList.contains('hidden')) setAuthView(authView);
@@ -847,9 +889,10 @@ async function handleAction(event) {
     }
     const awardDetails = actionResult?.scoreAward?.breakdown
       ?.map((item) => `${item.label} +${item.points}`).join(' / ');
+    const completionMessage = action.startsWith('complete:') ? '配達が完了しました。' : `${actionName}が完了しました。`;
     setMessage(actionResult?.scoreAward
-      ? `${actionName}が完了しました。${awardDetails}、合計 +${actionResult.scoreAward.points}ポイント獲得しました。`
-      : `${actionName}が完了しました。`, 'success');
+      ? `${completionMessage}${awardDetails}、合計 +${actionResult.scoreAward.points}ポイント獲得しました。`
+      : completionMessage, 'success');
   } catch (error) {
     setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
   } finally {

@@ -34,6 +34,7 @@ async function createTestDatabase() {
     const migrationPath = path.join(migrationsDirectory, directory, 'migration.sql');
     database.exec(await fs.readFile(migrationPath, 'utf8'));
   }
+  database.prepare('INSERT INTO "Store" ("name", "address") VALUES (?, ?)').run('BKC 既存店舗', '既存の学習用店舗');
   database.close();
 }
 
@@ -80,7 +81,7 @@ function authenticatedPost(pathname, key) {
   });
 }
 
-function updateLocation(token, latitude = 34.98, longitude = 135.96) {
+function updateLocation(token, latitude = 35.009, longitude = 135.768) {
   return request('/api/drivers/me/location', {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -253,13 +254,13 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(history.body.deliveries[0].order.status, 'DELIVERED');
   assert.notEqual(history.body.deliveries[0].deliveredAt, null);
 
-  const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=BKC&from=2000-01-01&to=2999-12-31', {
+  const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=' + encodeURIComponent('三条') + '&from=2000-01-01&to=2999-12-31', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   assert.equal(matchingHistory.status, 200);
   assert.equal(matchingHistory.body.summary.filteredDeliveries, 1);
   assert.deepEqual(matchingHistory.body.filters, {
-    status: 'DELIVERED', query: 'BKC', from: '2000-01-01', to: '2999-12-31',
+    status: 'DELIVERED', query: '三条', from: '2000-01-01', to: '2999-12-31',
   });
 
   const emptyHistory = await request('/api/deliveries/history?query=存在しない配送先', {
@@ -391,10 +392,10 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
 test('店舗に近い3人へ同じオファーを送り、最初の受諾で残りを取り下げる', async () => {
   const drivers = [];
   const locations = [
-    [34.981, 135.962],
-    [34.981, 135.963],
-    [34.981, 135.964],
-    [34.981, 136.1],
+    [35.0093, 135.7684],
+    [35.0093, 135.7694],
+    [35.0093, 135.7704],
+    [35.0093, 136.1],
   ];
 
   for (let index = 0; index < locations.length; index += 1) {
@@ -634,6 +635,37 @@ test('配達操作のブラウザースクリプトを配信しホーム画面�
   const html = await homepage.text();
   assert.match(html, /<script\s+src="\/delivery-ui\.js"><\/script>/);
   assert.ok(html.indexOf('src="/delivery-ui.js"') < html.indexOf('src="/app.js"'));
+});
+
+test('実地図ライブラリをローカル配信し、外部画像の許可先を限定する', async () => {
+  for (const asset of ['/vendor/leaflet.js', '/vendor/leaflet.css', '/delivery-map.js']) {
+    const response = await fetch(baseUrl + asset);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), asset.endsWith('.css') ? /^text\/css/ : /^application\/javascript/);
+    assert.ok((await response.text()).length > 100);
+  }
+  const page = await fetch(baseUrl);
+  const csp = page.headers.get('content-security-policy');
+  assert.match(csp, /img-src 'self' data: https:\/\/tile.openstreetmap.org;/);
+  assert.match(csp, /script-src 'self';/);
+  assert.equal(page.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+  const html = await page.text();
+  assert.ok(html.indexOf('src="/delivery-map.js"') < html.indexOf('src="/app.js"'));
+  assert.doesNotMatch(html, /<img[^>]*tile.openstreetmap.org/);
+});
+
+test('京都のデモ店舗を追加しても既存店舗の座標は変更しない', () => {
+  const database = new DatabaseSync(databasePath);
+  const old = database.prepare('SELECT * FROM Store WHERE name = ?').get('BKC 既存店舗');
+  assert.equal(old.latitude, 34.981);
+  assert.equal(old.longitude, 135.962);
+  const kyoto = database.prepare('SELECT * FROM Store WHERE name = ?').get('三条デリバリーストア（デモ）');
+  assert.equal(kyoto.latitude, 35.0093);
+  assert.equal(kyoto.longitude, 135.7684);
+  const order = database.prepare('SELECT * FROM "Order" WHERE storeId = ? LIMIT 1').get(kyoto.id);
+  assert.ok(order.dropoffLatitude > 35 && order.dropoffLatitude < 35.01);
+  assert.ok(order.dropoffLongitude > 135.77 && order.dropoffLongitude < 135.78);
+  database.close();
 });
 
 test('1MBを超えるJSON本文は受け付けない', async () => {
