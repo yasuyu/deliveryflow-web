@@ -1118,6 +1118,7 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/bottom-sheet.js') return serveFile(response, path.join(webPublicDirectory, 'bottom-sheet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/delivery-ui.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-ui.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/offline-actions.js') return serveFile(response, path.join(webPublicDirectory, 'offline-actions.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/delivery-map.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-map.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/vendor/leaflet.js') return serveFile(response, require.resolve('leaflet/dist/leaflet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/vendor/leaflet.css') return serveFile(response, require.resolve('leaflet/dist/leaflet.css'), 'text/css; charset=utf-8');

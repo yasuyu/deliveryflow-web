@@ -42,6 +42,7 @@ deliveryflow-web/
 │     ├─ public/
 │     │  ├─ index.html
 │     │  ├─ app.js
+│     │  ├─ offline-actions.js       オフライン操作の保存・順序再送
 │     │  ├─ route-preview.js
 │     │  ├─ style.css
 │     │  └─ docs.html
@@ -78,6 +79,7 @@ deliveryflow-web/
 
 - `index.html`: 画面構造
 - `app.js`: ボタン操作、API通信、WebSocketの再接続と画面更新
+- `offline-actions.js`: 受諾・受取・完了の端末内キュー、送信先の制限、順序再送と競合停止
 - `route-preview.js`: 外部通信しない経路模式図の生成。Node.jsからも読み込み、表示ロジックをテストする
 - `style.css`: 見た目とレスポンシブ表示
 - `docs.html`: OpenAPI仕様の閲覧画面

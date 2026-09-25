@@ -59,6 +59,7 @@ const actionGuidance = document.querySelector('#actionGuidance');
 const actionDestination = document.querySelector('#actionDestination');
 const offerDeadline = document.querySelector('#offerDeadline');
 const compactDelivery = document.querySelector('#compactDelivery');
+const offlineQueueStatus = document.querySelector('#offlineQueueStatus');
 const deliveryMap = DeliveryFlowMap.create({
   canvas: document.querySelector('#deliveryMap'), consent: document.querySelector('#mapConsent'),
   tools: document.querySelector('#mapTools'), note: document.querySelector('#mapNote'),
@@ -108,6 +109,9 @@ let realtimeRefreshQueued = false;
 let lastSuccessfulRefreshAt = 0;
 let pageIsUnloading = false;
 let refreshPromise = null;
+let offlineQueue = [];
+let offlineQueueFlushing = false;
+let offlineQueueNotice = '';
 let bottomSheetState = 'collapsed';
 let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
@@ -258,12 +262,84 @@ function setRegistrationMessage(text = '') {
   registrationMessage.classList.toggle('hidden', !text);
 }
 
+function queueDriverId() {
+  return state?.driver?.id || localStorage.getItem('deliveryFlowDriverId');
+}
+
+function loadOfflineQueue() {
+  const driverId = queueDriverId();
+  offlineQueue = driverId ? DeliveryFlowOfflineActions.load(localStorage, driverId) : [];
+  return offlineQueue;
+}
+
+function saveOfflineQueue(entries) {
+  const driverId = queueDriverId();
+  offlineQueue = driverId ? DeliveryFlowOfflineActions.save(localStorage, driverId, entries) : [];
+  return offlineQueue;
+}
+
+function enqueueOfflineAction(entry) {
+  const driverId = queueDriverId();
+  if (!driverId) throw new Error('配達員を確認できないため操作を保存できません。');
+  const result = DeliveryFlowOfflineActions.enqueue(localStorage, driverId, offlineQueue, entry);
+  offlineQueue = result.entries;
+  offlineQueueNotice = 'ログイン情報や現在地は保存していません。';
+  return result;
+}
+
+function renderOfflineQueueStatus() {
+  offlineQueueStatus.replaceChildren();
+  offlineQueueStatus.className = 'offline-queue';
+  if (!offlineQueue.length) {
+    offlineQueueStatus.classList.add('hidden');
+    return;
+  }
+  const first = offlineQueue[0];
+  const blocked = first.status === 'blocked';
+  const label = DeliveryFlowOfflineActions.label(first);
+  const text = document.createElement('p');
+  if (offlineQueueFlushing) {
+    text.textContent = `保存した${label}を送信しています（残り${offlineQueue.length}件）。`;
+    offlineQueueStatus.dataset.status = 'sending';
+  } else if (blocked) {
+    text.textContent = `${label}を送信できませんでした。${first.error?.message || '最新の配達状況を確認してください。'}`;
+    offlineQueueStatus.dataset.status = 'blocked';
+  } else {
+    text.textContent = `${label}を端末に保存しました。接続後に自動送信します（${offlineQueue.length}件）。`;
+    offlineQueueStatus.dataset.status = navigator.onLine ? 'waiting' : 'offline';
+  }
+  offlineQueueStatus.append(text);
+  if (blocked) {
+    const controls = document.createElement('div');
+    controls.className = 'offline-queue__actions';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'button-secondary';
+    retry.dataset.queueAction = 'retry';
+    retry.textContent = '最新状態で再送する';
+    const discard = document.createElement('button');
+    discard.type = 'button';
+    discard.className = 'button-secondary';
+    discard.dataset.queueAction = 'discard';
+    discard.textContent = 'この操作を取り消す';
+    controls.append(retry, discard);
+    offlineQueueStatus.append(controls);
+  }
+  if (offlineQueueNotice) {
+    const notice = document.createElement('small');
+    notice.textContent = offlineQueueNotice;
+    offlineQueueStatus.append(notice);
+  }
+}
+
 function setLoading(loading) {
   isLoading = loading;
   document.querySelectorAll('[data-action], [data-location-action], button[type="submit"], #historyFilterReset').forEach((element) => {
     element.disabled = loading || element.dataset.alwaysDisabled === 'true';
   });
   actions.setAttribute('aria-busy', String(loading));
+  if (state) renderActionDock();
+  renderOfflineQueueStatus();
   if (!loading && realtimeRefreshQueued && !refreshPromise) {
     realtimeRefreshQueued = false;
     queueMicrotask(() => refresh({ preserveMessage: true }));
@@ -359,8 +435,7 @@ function connectRealtime() {
   });
 }
 
-async function request(url, body = null) {
-  const idempotencyKey = crypto.randomUUID();
+async function request(url, body = null, { idempotencyKey = crypto.randomUUID() } = {}) {
   const options = {
     method: 'POST',
     headers: {
@@ -375,11 +450,50 @@ async function request(url, body = null) {
     try {
       const response = await fetch(url, options);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
+      if (!response.ok) {
+        const error = new Error(data.message || 'リクエストを処理できませんでした。');
+        error.code = data.code || 'REQUEST_FAILED';
+        error.status = response.status;
+        throw error;
+      }
       return data;
     } catch (error) {
-      if (attempt === 1 || !(error instanceof TypeError)) throw error;
+      if (!(error instanceof TypeError)) throw error;
+      if (attempt === 1) {
+        const networkError = new Error('サーバーへ接続できません。');
+        networkError.network = true;
+        networkError.cause = error;
+        throw networkError;
+      }
     }
+  }
+}
+
+async function flushOfflineQueue() {
+  if (!driverToken || !offlineQueue.length || offlineQueueFlushing || !navigator.onLine) {
+    renderOfflineQueueStatus();
+    return;
+  }
+  offlineQueueFlushing = true;
+  offlineQueueNotice = '';
+  setLoading(true);
+  try {
+    const result = await DeliveryFlowOfflineActions.flush(offlineQueue, (entry, url) => (
+      request(url, null, { idempotencyKey: entry.idempotencyKey })
+    ));
+    saveOfflineQueue(result.remaining);
+    if (result.reason === 'complete') {
+      offlineQueueNotice = `${result.completed.length}件の操作を送信しました。`;
+      await refresh({ preserveMessage: true });
+      setMessage(`${result.completed.length}件のオフライン操作を送信しました。`, 'success');
+    } else if (result.reason === 'blocked') {
+      offlineQueueNotice = 'サーバー側の状態を確認してから、再送または取り消しを選んでください。';
+      await refresh({ preserveMessage: true });
+    }
+  } finally {
+    offlineQueueFlushing = false;
+    setLoading(false);
+    renderOfflineQueueStatus();
   }
 }
 
@@ -520,11 +634,14 @@ function renderActionDock() {
   offerDeadline.classList.toggle('offer-deadline--expired', view.expired);
   offerHasExpired = view.expired;
   DeliveryFlowUi.updateMarkup(actions, DeliveryFlowUi.renderActions(view));
-  actions.querySelectorAll('button').forEach((element) => { element.disabled = isLoading; });
+  actions.querySelectorAll('button').forEach((element) => {
+    element.disabled = isLoading || offlineQueue.length > 0;
+  });
   logoutButton.disabled = isLoading || state.driver.status !== 'OFFLINE';
   logoutButton.dataset.alwaysDisabled = String(state.driver.status !== 'OFFLINE');
   document.querySelector('#logoutHint').textContent = state.driver.status === 'OFFLINE'
     ? 'この端末からログアウトできます。' : '勤務中です。退勤するとログアウトできます。';
+  renderOfflineQueueStatus();
 }
 
 function renderScore() {
@@ -743,6 +860,7 @@ async function performRefresh({ preserveMessage = false } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
+    loadOfflineQueue();
     registrationCard.classList.add('hidden');
     workflow.classList.remove('hidden');
     render();
@@ -770,6 +888,9 @@ async function performRefresh({ preserveMessage = false } = {}) {
     renderHistory();
     connectRealtime();
     if (message.dataset.source === 'refresh' || (!preserveMessage && message.classList.contains('message--info'))) setMessage('');
+    if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing) {
+      queueMicrotask(flushOfflineQueue);
+    }
   } catch (error) {
     setMessage(`読み込みに失敗しました。${error.message}`, 'error', 'refresh');
   }
@@ -865,6 +986,7 @@ async function handleAction(event) {
     pickup: '荷物の受取', complete: '配達の完了', logout: 'ログアウト',
   };
   const actionName = actionLabels[action.split(':')[0]];
+  const queueEntry = DeliveryFlowOfflineActions.create(action, { idempotencyKey: crypto.randomUUID() });
   setLoading(true);
   setMessage(`${actionName}を処理しています。`, 'loading');
   try {
@@ -885,10 +1007,28 @@ async function handleAction(event) {
       await refresh();
       return;
     }
-    if (action.startsWith('accept:')) await request(`/api/offers/${action.split(':')[1]}/accept`);
     if (action.startsWith('reject:')) await request(`/api/offers/${action.split(':')[1]}/reject`);
-    if (action.startsWith('pickup:')) await request(`/api/assignments/${action.split(':')[1]}/pickup`);
-    if (action.startsWith('complete:')) actionResult = await request(`/api/assignments/${action.split(':')[1]}/complete`);
+    if (queueEntry) {
+      try {
+        if (!navigator.onLine) {
+          const offlineError = new Error('ブラウザーがオフラインです。');
+          offlineError.network = true;
+          throw offlineError;
+        }
+        actionResult = await request(
+          DeliveryFlowOfflineActions.endpoint(queueEntry),
+          null,
+          { idempotencyKey: queueEntry.idempotencyKey },
+        );
+      } catch (error) {
+        if (!error.network) throw error;
+        enqueueOfflineAction(queueEntry);
+        setSheetView('delivery');
+        setMessage(`${actionName}を端末に保存しました。接続後に自動送信します。`, 'success');
+        renderActionDock();
+        return;
+      }
+    }
     await refresh({ preserveMessage: true });
     if (['offer', 'accept', 'pickup', 'complete'].includes(action.split(':')[0])) {
       setSheetView('delivery');
@@ -907,6 +1047,28 @@ async function handleAction(event) {
 }
 actions.addEventListener('click', handleAction);
 logoutButton.addEventListener('click', handleAction);
+offlineQueueStatus.addEventListener('click', async (event) => {
+  const queueAction = event.target.closest('button[data-queue-action]')?.dataset.queueAction;
+  if (!queueAction || isLoading || !offlineQueue.length) return;
+  if (queueAction === 'retry') {
+    if (!navigator.onLine) {
+      setMessage('まだオフラインです。接続を確認してから再送してください。', 'error');
+      return;
+    }
+    saveOfflineQueue(DeliveryFlowOfflineActions.retry(offlineQueue));
+    offlineQueueNotice = '同じIdempotency-Keyで再送します。';
+    await flushOfflineQueue();
+    return;
+  }
+  if (queueAction === 'discard') {
+    const discarded = offlineQueue[0];
+    saveOfflineQueue(offlineQueue.slice(1));
+    offlineQueueNotice = '';
+    setMessage(`${DeliveryFlowOfflineActions.label(discarded)}の送信待ちを取り消しました。`, 'success');
+    renderActionDock();
+    await refresh({ preserveMessage: true });
+  }
+});
 
 weatherSimulatorForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1050,6 +1212,15 @@ historyFilterReset.addEventListener('click', async () => {
 window.addEventListener('beforeunload', () => {
   pageIsUnloading = true;
   disconnectRealtime();
+});
+window.addEventListener('online', () => {
+  offlineQueueNotice = '接続が戻りました。保存した操作を確認しています。';
+  renderOfflineQueueStatus();
+  flushOfflineQueue();
+});
+window.addEventListener('offline', () => {
+  renderOfflineQueueStatus();
+  setRealtimeStatus('fallback');
 });
 
 setBottomSheetState(bottomSheetState);
