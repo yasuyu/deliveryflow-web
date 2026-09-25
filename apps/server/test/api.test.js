@@ -518,6 +518,16 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
   await request('/api/shifts/start', {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': 'location-start' },
   });
+  const initialLocation = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(initialLocation.body.location.status, 'MISSING');
+  const demoLocation = await request('/api/drivers/me/location', {
+    method: 'PUT', headers: locationHeaders,
+    body: JSON.stringify({ source: 'DEMO' }),
+  });
+  assert.equal(demoLocation.status, 200);
+  assert.equal(demoLocation.body.source, 'DEMO');
+  assert.equal(demoLocation.body.label, '京都市役所付近（デモ）');
+  assert.deepEqual(demoLocation.body.coordinates, { latitude: 35.011, longitude: 135.768 });
   const invalid = await request('/api/drivers/me/location', {
     method: 'PUT', headers: locationHeaders,
     body: JSON.stringify({ latitude: 91, longitude: 135.96 }),
@@ -531,7 +541,9 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
   });
   assert.equal(updated.status, 200);
   assert.equal(updated.body.status, 'AVAILABLE');
-  assert.equal(updated.body.accuracyMeters, 8);
+  assert.equal(updated.body.source, 'DEVICE');
+  assert.equal(updated.body.accuracyMeters, 100);
+  assert.equal(updated.body.coordinates, null);
   assert.notEqual(updated.body.updatedAt, null);
 
   const dashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
@@ -548,6 +560,14 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
   assert.equal(oldLocationDashboard.body.location.status, 'AVAILABLE');
   assert.equal(typeof oldLocationDashboard.body.offer.routeDistance.toPickupMeters, 'number');
 
+  const expiredDatabase = new DatabaseSync(databasePath);
+  expiredDatabase.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
+    .run(Date.now() - 12 * 60 * 60 * 1000, registration.body.driver.id);
+  expiredDatabase.close();
+  const expiredLocationDashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(expiredLocationDashboard.body.location.status, 'MISSING');
+  assert.equal(expiredLocationDashboard.body.location.source, null);
+
   await request('/api/drivers/me/location', {
     method: 'PUT', headers: locationHeaders,
     body: JSON.stringify({ latitude: 34.98, longitude: 135.96, accuracyMeters: 8 }),
@@ -563,13 +583,14 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
 
   const database = new DatabaseSync(databasePath);
   const stored = database.prepare(
-    'SELECT latitude, longitude, locationAccuracyMeters, locationUpdatedAt FROM Driver WHERE id = ?',
+    'SELECT latitude, longitude, locationAccuracyMeters, locationUpdatedAt, locationSource FROM Driver WHERE id = ?',
   ).get(registration.body.driver.id);
   database.close();
   assert.equal(stored.latitude, null);
   assert.equal(stored.longitude, null);
   assert.equal(stored.locationAccuracyMeters, null);
   assert.equal(stored.locationUpdatedAt, null);
+  assert.equal(stored.locationSource, null);
 });
 
 test('認証なしでは配達員用APIを利用できない', async () => {

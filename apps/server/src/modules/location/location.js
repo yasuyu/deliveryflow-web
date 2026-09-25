@@ -1,4 +1,12 @@
 const earthRadiusMeters = 6_371_000;
+const coordinatePrecision = 3;
+const locationRetentionMilliseconds = 12 * 60 * 60 * 1000;
+const locationSources = { demo: 'DEMO', device: 'DEVICE' };
+const demoLocation = {
+  label: '京都市役所付近（デモ）',
+  latitude: 35.011,
+  longitude: 135.768,
+};
 
 function degreesToRadians(value) {
   return value * Math.PI / 180;
@@ -14,8 +22,19 @@ function distanceMeters(from, to) {
   return Math.round(earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function locationStatus(driver) {
+function roundCoordinate(value) {
+  const factor = 10 ** coordinatePrecision;
+  return Math.round(value * factor) / factor;
+}
+
+function locationHasExpired(driver, now = new Date()) {
+  if (!driver.locationUpdatedAt) return false;
+  return now.getTime() - new Date(driver.locationUpdatedAt).getTime() >= locationRetentionMilliseconds;
+}
+
+function locationStatus(driver, now = new Date()) {
   if (driver.latitude === null || driver.longitude === null || !driver.locationUpdatedAt) return 'MISSING';
+  if (locationHasExpired(driver, now)) return 'MISSING';
   return 'AVAILABLE';
 }
 
@@ -33,4 +52,32 @@ function validateLocation({ latitude, longitude, accuracyMeters }) {
   return null;
 }
 
-module.exports = { distanceMeters, locationStatus, validateLocation };
+function normalizedLocation(input) {
+  const source = input.source || locationSources.device;
+  if (source === locationSources.demo) {
+    return { ...demoLocation, source: locationSources.demo, accuracyMeters: null };
+  }
+  if (source !== locationSources.device) return null;
+  const validationMessage = validateLocation(input);
+  if (validationMessage) return { validationMessage };
+  return {
+    source: locationSources.device,
+    latitude: roundCoordinate(input.latitude),
+    longitude: roundCoordinate(input.longitude),
+    accuracyMeters: input.accuracyMeters === undefined
+      ? null
+      : Math.max(Math.round(input.accuracyMeters), 100),
+  };
+}
+
+module.exports = {
+  demoLocation,
+  distanceMeters,
+  locationHasExpired,
+  locationRetentionMilliseconds,
+  locationSources,
+  locationStatus,
+  normalizedLocation,
+  roundCoordinate,
+  validateLocation,
+};

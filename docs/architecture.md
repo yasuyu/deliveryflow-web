@@ -92,7 +92,7 @@ Node.jsの起動点です。HTTPルーティング、Bearer認証、WebSocketの
 
 HTTPやDBに依存しない、単体テスト可能な機能ロジックを置きます。
 
-- `location`: Haversine式による直線距離、座標検証、勤務中の最新位置管理
+- `location`: Haversine式による直線距離、デモ位置、端末座標の丸め・検証、12時間の保持期限
 - `matching`: 店舗からの直線距離で候補配達員を近い順に選定
 - `realtime`: WebSocketの認証、接続監視、順序付き変更通知
 - `score`: 基本点、配達距離・雨天・深夜ボーナス、保存済み内訳の解析
@@ -108,7 +108,7 @@ DBの設計と変更履歴です。SQLiteとPostgreSQLではSQL方言が異な�
 ### `apps/server/test`
 
 - `api.test.js`: 一時SQLite DBと実際のHTTPサーバーを使う結合テスト
-- `location.test.js`: 距離・保存位置・入力範囲の単体テスト
+- `location.test.js`: 距離・座標丸め・デモ位置・保持期限・入力範囲の単体テスト
 - `matching.test.js`: 近い順の候補選定と同距離時の順位テスト
 - `score-bonuses.test.js`: 加点ルールと時間境界の単体テスト
 

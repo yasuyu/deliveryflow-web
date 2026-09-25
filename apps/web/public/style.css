@@ -433,6 +433,8 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .action-secondary button { flex: 1; min-height: 36px; padding: 8px; background: transparent; border: 0; font-size: 11px; }
 .map-shell #driverName, .map-shell #driverId, .map-shell #shiftStartedAt { display: inline; margin: 0; font-size: inherit; white-space: normal; }
 .map-settings p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.location-choice { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 12px; }
+.location-choice button { flex: 1 1 220px; margin: 0; }
 .map-shell[data-sheet-state="expanded"] .map-consent { display: none; }
 @media (min-width: 701px) {
   .map-stage { inset: 0; }

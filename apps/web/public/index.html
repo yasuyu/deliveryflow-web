@@ -72,7 +72,7 @@
         <div id="mapConsent" class="map-consent">
           <svg class="ui-icon" aria-hidden="true"><use href="#icon-pin"/></svg>
           <h2>配達エリアを地図で確認</h2>
-          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。現在地は更新ボタンを押すまで取得・表示しません。</p>
+          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。勤務開始時はデモ位置を使い、端末位置は明示的に切り替えた場合だけ取得します。</p>
           <button id="enableMap" type="button">実地図を表示する</button>
           <small>無料・APIキー不要</small>
         </div>
@@ -104,13 +104,16 @@
         <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>今回の配達</h2><div id="deliveryDetail"></div></section>
       </section>
       <section id="settingsPanel" class="sheet-panel hidden" role="region" aria-label="設定" tabindex="0">
-      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。現在地は更新ボタンを押すまで取得・表示しません。更新後は現在地を含む周辺の地図タイルを読み込みます。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
+      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。端末位置へ切り替えた場合は、約100m単位に丸めた現在地周辺の地図タイルを読み込みます。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
       <section class="card location-card">
-        <p class="eyebrow">CURRENT LOCATION · LOCAL FIRST</p><h2>現在地と距離</h2>
-        <p>ボタンを押したときだけブラウザへ位置情報を依頼します。現在地は勤務中だけ保持し、退勤すると削除します。</p>
-        <button id="updateLocation" type="button">現在地を更新する</button>
+        <p class="eyebrow">LOCATION · PRIVACY FIRST</p><h2>配達位置と距離</h2>
+        <p>勤務開始時は京都市内のデモ位置を使います。実際の現在地は、下のボタンを押してブラウザで許可した場合だけ取得します。</p>
+        <div class="location-choice">
+          <button id="useDemoLocation" type="button" data-location-action>京都のデモ位置を使う</button>
+          <button id="updateLocation" type="button" class="button-secondary" data-location-action>実際の現在地を使う（許可が必要）</button>
+        </div>
         <p id="locationStatus" class="location-status" aria-live="polite">勤務を開始すると更新できます。</p>
-        <small>勤務中に最後に更新した位置を候補選定に使います。距離は外部地図を使わない直線距離で、道路上の移動距離とは異なります。</small>
+        <small>端末位置は約100m単位に丸め、最新1件だけを候補選定に使います。退勤時または最終更新から12時間後に削除します。距離は道路上の移動距離ではなく直線距離です。</small>
       </section>
       <section class="card simulator-card">
         <p class="eyebrow">LOCAL WEATHER SIMULATOR</p><h2>天候シミュレーター</h2>
@@ -122,7 +125,7 @@
         <p id="weatherSimulatorStatus" class="simulator-status">現在: 晴れ</p>
       </section>
       <section class="card account-card"><p class="eyebrow">ACCOUNT</p><h2>アカウント</h2><p><strong id="driverName">-</strong> · <span id="driverId">配達員ID: -</span></p><p id="shiftStartedAt"></p><p id="logoutHint">退勤後にログアウトできます。</p><button id="logoutButton" type="button" class="button-secondary" data-action="logout">ログアウトする</button></section>
-      <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>現在地は更新ボタンを押したときだけ取得します。地図上の点線は直線です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
+      <section class="learnmo learn"><p class="eyebrow">使い方</p><h2>現在地と道路経路について</h2><p>初期状態ではデモ位置を使い、端末位置は明示的に切り替えた場合だけ取得します。地図上の点線は直線です。実際の道路経路は、送信する座標を確認したうえでOpenStreetMapへ開けます。</p></section>
       </section>
       <section id="activityPanel" class="sheet-panel hidden" role="region" aria-label="実績・ランキング" tabindex="0">
       <section class="card score-card">

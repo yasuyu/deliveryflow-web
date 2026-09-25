@@ -38,6 +38,7 @@ const monthlyRankingMe = document.querySelector('#monthlyRankingMe');
 const weatherSimulatorForm = document.querySelector('#weatherSimulatorForm');
 const weatherCondition = document.querySelector('#weatherCondition');
 const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus');
+const useDemoLocationButton = document.querySelector('#useDemoLocation');
 const updateLocationButton = document.querySelector('#updateLocation');
 const locationStatusElement = document.querySelector('#locationStatus');
 const realtimeStatus = document.querySelector('#realtimeStatus');
@@ -259,7 +260,7 @@ function setRegistrationMessage(text = '') {
 
 function setLoading(loading) {
   isLoading = loading;
-  document.querySelectorAll('[data-action], button[type="submit"], #updateLocation, #historyFilterReset').forEach((element) => {
+  document.querySelectorAll('[data-action], [data-location-action], button[type="submit"], #historyFilterReset').forEach((element) => {
     element.disabled = loading || element.dataset.alwaysDisabled === 'true';
   });
   actions.setAttribute('aria-busy', String(loading));
@@ -618,7 +619,10 @@ function renderHistory() {
 
 function render() {
   workflow.classList.toggle('workflow--active-delivery', Boolean(state.assignment || (state.driver.status === 'OFFERED' && state.offer)));
-  if (state.driver.status === 'OFFLINE') currentBrowserLocation = null;
+  if (state.driver.status === 'OFFLINE' || state.location.status === 'MISSING') currentBrowserLocation = null;
+  if (state.location.source === 'DEMO' && state.location.coordinates) {
+    currentBrowserLocation = state.location.coordinates;
+  }
   document.querySelector('#driverStatus').textContent = statusText[state.driver.status];
   document.querySelector('#driverStatus').dataset.status = state.driver.status;
   document.querySelector('#driverName').textContent = state.driver.name;
@@ -653,11 +657,15 @@ function render() {
   const currentWeather = state.simulator?.weatherCondition || 'CLEAR';
   if (document.activeElement !== weatherCondition) weatherCondition.value = currentWeather;
   weatherSimulatorStatus.textContent = `現在: ${currentWeather === 'RAIN' ? '雨' : '晴れ'}`;
-  updateLocationButton.disabled = isLoading || state.driver.status === 'OFFLINE';
-  updateLocationButton.dataset.alwaysDisabled = String(state.driver.status === 'OFFLINE');
+  for (const button of [useDemoLocationButton, updateLocationButton]) {
+    button.disabled = isLoading || state.driver.status === 'OFFLINE';
+    button.dataset.alwaysDisabled = String(state.driver.status === 'OFFLINE');
+  }
   const locationLabels = {
     MISSING: '現在地はまだ保存されていません。',
-    AVAILABLE: `現在地を利用できます（最終更新: ${formatJapanTime(state.location.updatedAt)}、精度 約${Math.round(state.location.accuracyMeters || 0)}m）。`,
+    AVAILABLE: state.location.source === 'DEMO'
+      ? `${state.location.label || '京都市内'}を利用中です。個人の現在地は取得していません。`
+      : `約100m単位に丸めた端末位置を利用中です（最終更新: ${formatJapanTime(state.location.updatedAt)}、精度 約${Math.round(state.location.accuracyMeters || 100)}m）。`,
   };
   locationStatusElement.textContent = state.driver.status === 'OFFLINE'
     ? '退勤中のため現在地は保持していません。'
@@ -861,7 +869,11 @@ async function handleAction(event) {
   setMessage(`${actionName}を処理しています。`, 'loading');
   try {
     let actionResult;
-    if (action === 'start') await request('/api/shifts/start');
+    if (action === 'start') {
+      await request('/api/shifts/start');
+      const demoResult = await saveLocation({ source: 'DEMO' });
+      currentBrowserLocation = demoResult.coordinates;
+    }
     if (action === 'end') await request('/api/shifts/end');
     if (action === 'offer') await request('/api/offers/current');
     if (action === 'logout') {
@@ -911,6 +923,34 @@ weatherSimulatorForm.addEventListener('submit', async (event) => {
   }
 });
 
+async function saveLocation(location) {
+  const response = await fetch('/api/drivers/me/location', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${driverToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(location),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`${result.code}: ${result.message}`);
+  return result;
+}
+
+useDemoLocationButton.addEventListener('click', async () => {
+  if (isLoading) return;
+  setLoading(true);
+  setMessage('京都のデモ位置へ切り替えています。', 'loading');
+  try {
+    const result = await saveLocation({ source: 'DEMO' });
+    currentBrowserLocation = result.coordinates;
+    await refresh({ preserveMessage: true });
+    setMessage('京都市役所付近のデモ位置へ切り替えました。個人の現在地は使用していません。', 'success');
+  } catch (error) {
+    setMessage(`デモ位置へ切り替えられませんでした。${error.message}`, 'error');
+  } finally {
+    setLoading(false);
+    if (state) render();
+  }
+});
+
 updateLocationButton.addEventListener('click', async () => {
   if (!navigator.geolocation || isLoading) {
     setMessage('このブラウザでは位置情報を利用できません。', 'error');
@@ -924,23 +964,21 @@ updateLocationButton.addEventListener('click', async () => {
       reject,
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     ));
-    const response = await fetch('/api/drivers/me/location', {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${driverToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracyMeters: position.coords.accuracy,
-      }),
+    const roundedLocation = {
+      latitude: Math.round(position.coords.latitude * 1000) / 1000,
+      longitude: Math.round(position.coords.longitude * 1000) / 1000,
+    };
+    await saveLocation({
+      source: 'DEVICE',
+      ...roundedLocation,
+      accuracyMeters: Math.max(position.coords.accuracy, 100),
     });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`${result.code}: ${result.message}`);
     currentBrowserLocation = {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
+      latitude: roundedLocation.latitude,
+      longitude: roundedLocation.longitude,
     };
     await refresh({ preserveMessage: true });
-    setMessage('現在地を更新し、店舗までの直線距離を再計算しました。', 'success');
+    setMessage('約100m単位に丸めた現在地を保存し、店舗までの直線距離を再計算しました。', 'success');
   } catch (error) {
     const denied = error?.code === 1;
     setMessage(denied

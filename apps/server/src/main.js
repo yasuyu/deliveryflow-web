@@ -8,7 +8,15 @@ const {
   parseBreakdown,
   scoreRuleCodes,
 } = require('./modules/score/score-bonuses');
-const { distanceMeters, locationStatus, validateLocation } = require('./modules/location/location');
+const {
+  demoLocation,
+  distanceMeters,
+  locationHasExpired,
+  locationRetentionMilliseconds,
+  locationSources,
+  locationStatus,
+  normalizedLocation,
+} = require('./modules/location/location');
 const { nearestDrivers } = require('./modules/matching/matching');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
 const {
@@ -153,17 +161,47 @@ function publicDriver(driver) {
     longitude,
     locationAccuracyMeters,
     locationUpdatedAt,
+    locationSource,
     ...safeDriver
   } = driver;
   return safeDriver;
 }
 
 function publicLocation(driver) {
+  const status = locationStatus(driver);
+  const source = status === 'AVAILABLE'
+    ? driver.locationSource || locationSources.device
+    : null;
   return {
-    status: locationStatus(driver),
-    updatedAt: driver.locationUpdatedAt,
-    accuracyMeters: driver.locationAccuracyMeters,
+    status,
+    source,
+    label: source === locationSources.demo ? demoLocation.label : null,
+    coordinates: source === locationSources.demo
+      ? { latitude: driver.latitude, longitude: driver.longitude }
+      : null,
+    updatedAt: status === 'AVAILABLE' ? driver.locationUpdatedAt : null,
+    accuracyMeters: status === 'AVAILABLE' ? driver.locationAccuracyMeters : null,
   };
+}
+
+const clearedLocation = {
+  latitude: null,
+  longitude: null,
+  locationAccuracyMeters: null,
+  locationUpdatedAt: null,
+  locationSource: null,
+};
+
+async function clearExpiredLocations() {
+  return prisma.driver.updateMany({
+    where: { locationUpdatedAt: { lte: new Date(Date.now() - locationRetentionMilliseconds) } },
+    data: clearedLocation,
+  });
+}
+
+async function clearExpiredDriverLocation(driver) {
+  if (!locationHasExpired(driver)) return driver;
+  return prisma.driver.update({ where: { id: driver.id }, data: clearedLocation });
 }
 
 function routeDistance(order, driver) {
@@ -300,7 +338,7 @@ async function authenticateAccessToken(accessToken) {
   const accessTokenHash = createHash('sha256').update(accessToken).digest('hex');
   const driver = await prisma.driver.findUnique({ where: { accessTokenHash } });
   if (!driver) throw new ApiError(401, 'UNAUTHORIZED', '配達員が見つかりません');
-  return driver;
+  return clearExpiredDriverLocation(driver);
 }
 
 async function runIdempotently(request, driver, operation) {
@@ -463,6 +501,7 @@ async function ensureSeed() {
   await ensureHackathonDemo(prisma, {
     includeRankings: process.env.DEMO_RANKING_SEED !== 'false',
   });
+  await clearExpiredLocations();
   const driver = await currentDriver();
 
   await prisma.offer.updateMany({
@@ -813,10 +852,7 @@ async function endShift(driver) {
       data: {
         status: 'OFFLINE',
         shiftStartedAt: null,
-        latitude: null,
-        longitude: null,
-        locationAccuracyMeters: null,
-        locationUpdatedAt: null,
+        ...clearedLocation,
       },
     }),
   ]);
@@ -830,16 +866,22 @@ async function updateDriverLocation(driver, location) {
   if (driver.status === 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '現在地は勤務中のみ更新できます');
   }
-  const validationMessage = validateLocation(location);
-  if (validationMessage) throw new ApiError(400, 'VALIDATION_ERROR', validationMessage);
+  const normalized = normalizedLocation(location);
+  if (!normalized) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'sourceはDEMOまたはDEVICEを指定してください');
+  }
+  if (normalized.validationMessage) {
+    throw new ApiError(400, 'VALIDATION_ERROR', normalized.validationMessage);
+  }
 
   const updated = await prisma.driver.update({
     where: { id: driver.id },
     data: {
-      latitude: location.latitude,
-      longitude: location.longitude,
-      locationAccuracyMeters: location.accuracyMeters ?? null,
+      latitude: normalized.latitude,
+      longitude: normalized.longitude,
+      locationAccuracyMeters: normalized.accuracyMeters,
       locationUpdatedAt: new Date(),
+      locationSource: normalized.source,
     },
   });
   return publicLocation(updated);
@@ -1229,6 +1271,17 @@ const server = http.createServer(async (request, response) => {
 realtimeHub = createRealtimeHub(server, authenticateAccessToken);
 
 ensureSeed().then(() => {
-  server.listen(port, () => console.log(`DeliveryFlow is running at http://localhost:${port}`));
+  server.listen(port, () => {
+    console.log(`DeliveryFlow is running at http://localhost:${port}`);
+    const locationCleanupTimer = setInterval(() => {
+      clearExpiredLocations().catch((error) => console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        event: 'location_cleanup_failed',
+        message: error.message,
+      })));
+    }, 5 * 60 * 1000);
+    locationCleanupTimer.unref();
+  });
 });
 

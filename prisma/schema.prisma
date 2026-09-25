@@ -33,6 +33,7 @@ model Driver {
   longitude      Float?
   locationAccuracyMeters Float?
   locationUpdatedAt DateTime?
+  locationSource  String?
   offers         Offer[]
   assignments    Assignment[]
   scoreEvents    ScoreEvent[]
