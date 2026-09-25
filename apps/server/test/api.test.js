@@ -670,6 +670,18 @@ test('配達操作のブラウザースクリプトを配信しホーム画面�
   assert.ok(html.indexOf('src="/delivery-ui.js"') < html.indexOf('src="/app.js"'));
 });
 
+test('オフライン操作キューのスクリプトを配信しアプリより先に読み込む', async () => {
+  const response = await fetch(`${baseUrl}/offline-actions.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/javascript/);
+  assert.match(await response.text(), /DeliveryFlowOfflineActions/);
+
+  const homepage = await fetch(baseUrl);
+  const html = await homepage.text();
+  assert.match(html, /<script\s+src="\/offline-actions\.js"><\/script>/);
+  assert.ok(html.indexOf('src="/offline-actions.js"') < html.indexOf('src="/app.js"'));
+});
+
 test('実地図ライブラリをローカル配信し、外部画像の許可先を限定する', async () => {
   for (const asset of ['/vendor/leaflet.js', '/vendor/leaflet.css', '/delivery-map.js']) {
     const response = await fetch(baseUrl + asset);
