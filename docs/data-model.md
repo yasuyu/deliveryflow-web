@@ -36,11 +36,12 @@ ScoreRule（加点ルールのマスター）
 | `status` | `OFFLINE`、`IDLE`、`OFFERED`、`BUSY` |
 | `shiftStartedAt` | 現在の勤務開始時刻 |
 | `score` | 全期間の累計スコア |
-| `latitude`, `longitude` | 勤務中に明示取得した最新座標 |
-| `locationAccuracyMeters` | ブラウザが返した推定精度 |
+| `latitude`, `longitude` | 勤務中のデモ位置、または約100m単位に丸めた最新端末座標 |
+| `locationAccuracyMeters` | 丸め幅を含めた推定精度。デモ位置では`null` |
 | `locationUpdatedAt` | サーバーが位置を保存した時刻 |
+| `locationSource` | `DEMO`または`DEVICE` |
 
-位置関連の4項目はすべて任意です。退勤時に`null`へ戻します。
+位置関連の5項目はすべて任意です。退勤時または最終更新から12時間経過後に`null`へ戻します。
 
 ### Store
 
@@ -130,7 +131,7 @@ DBモデルを変更するときは両Schemaと両Migrationを同時に更新し
 |---|---|---|
 | アクセストークンハッシュ | 登録・ログイン | ログアウトで`null` |
 | PINハッシュ | 登録 | 現在は削除APIなし |
-| 現在地 | 勤務中の明示更新 | 退勤で全位置項目を`null` |
+| 配達位置 | 勤務開始時のデモ位置または勤務中の明示更新 | 退勤時または最終更新から12時間後に全位置項目を`null` |
 | Offer | 候補生成 | 削除せず状態で履歴を保持 |
 | Assignment | Offer受諾 | 削除せず進行時刻を保持 |
 | ScoreEvent | 配達完了 | 削除せず加点履歴を保持 |
