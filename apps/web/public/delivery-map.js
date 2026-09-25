@@ -28,7 +28,7 @@
     return meters < 1000 ? `約${Math.round(meters)}m` : `約${(meters / 1000).toFixed(1)}km`;
   }
 
-  function create({ canvas, consent, tools, note, error, toggle }) {
+  function create({ canvas, consent = null, tools, note, error, toggle }) {
     let map = null;
     let layer = null;
     let markers = null;
@@ -97,13 +97,13 @@
       overview();
     }
     function enable() {
-      if (map) return;
+      if (map) return true;
       if (!root.L) {
         error.textContent = '地図の表示機能を読み込めませんでした。ページを再読み込みしてください。';
         error.classList.remove('hidden');
-        return;
+        return false;
       }
-      consent.classList.add('hidden');
+      consent?.classList.add('hidden');
       tools.classList.remove('hidden');
       toggle.textContent = '地図の通信を停止する';
       const reducedMotion = root.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -129,17 +129,18 @@
       previousKey = '';
       update(currentOrder, currentOptions);
       layer.addTo(map);
+      return true;
     }
     function disable() {
       clearTimeout(resizeTimer);
       if (map) map.remove();
       map = layer = markers = null;
       previousKey = '';
-      consent.classList.remove('hidden');
+      consent?.classList.remove('hidden');
       tools.classList.add('hidden');
       note.classList.add('hidden');
       error.classList.add('hidden');
-      toggle.textContent = '実地図を表示する（外部通信）';
+      toggle.textContent = '実地図を再開する（外部通信）';
     }
     // Wait until the sheet settles before requesting tiles for the resized viewport.
     new ResizeObserver(() => {

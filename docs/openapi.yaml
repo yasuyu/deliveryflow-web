@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.10.0
+  version: 0.11.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 x-websocket:
   endpoint: /api/realtime
@@ -54,7 +54,7 @@ paths:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
-        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の料金、店舗・届け先の学習用座標、直線距離、固定済み見込みスコア・内訳を返す }
+        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の料金、店舗・届け先の学習用座標、直線距離、固定済み見込みスコア・内訳、オファー受付秒数を返す }
   /api/drivers/me/location:
     put:
       summary: 勤務中の配達位置をデモ位置または端末位置へ更新する
@@ -169,10 +169,11 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/ScoreSnapshot'
                   - type: object
-                    required: [id, status, order]
+                    required: [id, status, order, acceptanceSeconds]
                     properties:
                       id: { type: integer }
                       status: { type: string, enum: [PENDING] }
+                      acceptanceSeconds: { type: integer, minimum: 1, example: 30 }
                       order: { $ref: '#/components/schemas/Order' }
         '404': { description: オファーなし }
   /api/logout:

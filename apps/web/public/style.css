@@ -124,8 +124,18 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .action-dock { flex: 0 0 auto; width: 100%; margin: 0; padding: 13px 24px max(14px,env(safe-area-inset-bottom)); border: 0; border-top: 1px solid var(--line); background: #fff; box-shadow: 0 -4px 16px rgba(20,43,46,.035); }
 .action-dock__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 12px; }
 .action-dock #actionGuidance { margin: 0; font-size: 17px; line-height: 1.4; letter-spacing: -.015em; }
-.offer-deadline { margin: 0; padding: 3px 7px; border-radius: 5px; background: #fff2d4; color: #765316; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.offer-deadline--expired { background: #fff0ee; color: var(--danger); }
+.offer-countdown { margin: 10px 0 4px; padding: 10px 12px; border-radius: 9px; background: #f7efd8; color: #765316; }
+.offer-countdown__label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 11px; }
+.offer-countdown__label strong { font: 700 15px 'DM Mono', monospace; white-space: nowrap; }
+.offer-countdown progress { display: block; width: 100%; height: 8px; margin-top: 7px; border: 0; border-radius: 999px; overflow: hidden; background: #e3d7b7; color: #b47b19; }
+.offer-countdown progress::-webkit-progress-bar { border-radius: 999px; background: #e3d7b7; }
+.offer-countdown progress::-webkit-progress-value { border-radius: 999px; background: #b47b19; transition: width .3s linear; }
+.offer-countdown progress::-moz-progress-bar { border-radius: 999px; background: #b47b19; }
+.offer-countdown--urgent { background: #fff0ee; color: var(--danger); }
+.offer-countdown--urgent progress { background: #ebc7c2; color: var(--danger); }
+.offer-countdown--urgent progress::-webkit-progress-bar { background: #ebc7c2; }
+.offer-countdown--urgent progress::-webkit-progress-value, .offer-countdown--urgent progress::-moz-progress-bar { background: var(--danger); }
+.offer-deadline--expired { color: var(--danger); }
 #actionDestination { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .action-dock .message { min-height: 0; margin: 6px 0 9px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .action-dock .message:empty, #actionDestination:empty { display: none; }
@@ -148,8 +158,10 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 #actions[aria-busy="true"] button { cursor: wait; }
 
 /* Delivery content: the destination, price and next stage come before reference details. */
-.delivery-progress { margin: 0 0 20px; }
-.delivery-progress__guidance { margin: 0 0 14px; color: var(--brand-dark); font-size: 21px; font-weight: 900; letter-spacing: -.02em; }
+.delivery-progress { margin: 0 0 18px; }
+.delivery-progress__heading { margin: 0 0 12px; padding: 13px 15px; border-left: 4px solid var(--brand); border-radius: 0 10px 10px 0; background: #edf3ed; }
+.delivery-progress__heading span { display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.delivery-progress__heading h2 { margin: 0; color: var(--brand-dark); font-size: 19px; font-weight: 900; line-height: 1.35; letter-spacing: -.02em; }
 .delivery-progress ol { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: delivery-step; }
 .delivery-progress__step { position: relative; padding: 8px 5px; border-radius: 7px; background: #f0f3ef; color: var(--muted); text-align: center; font-size: 11px; font-weight: 700; counter-increment: delivery-step; }
 .delivery-progress__step::before { content: counter(delivery-step); display: inline-grid; place-items: center; width: 19px; height: 19px; margin-right: 5px; border-radius: 50%; background: #fff; color: var(--muted); }
@@ -316,7 +328,8 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
   #actions .action-primary { flex-basis: 100%; min-height: 48px; padding: 11px 14px; }
   .action-secondary { flex: 1 1 100%; gap: 8px; }
   .action-secondary button { flex: 1 1 0; min-height: 38px; padding: 7px 8px; font-size: 11px; }
-  .delivery-progress__guidance { font-size: 19px; }
+  .delivery-progress__heading { padding: 11px 12px; }
+  .delivery-progress__heading h2 { font-size: 17px; }
   .delivery-progress ol { gap: 5px; }
   .delivery-progress__step { padding: 8px 3px; font-size: 10px; }
   .delivery-progress__step::before { display: block; margin: 0 auto 4px; }
@@ -401,12 +414,6 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .ride-score:not(:disabled):hover, .ride-menu:not(:disabled):hover { transform: none; box-shadow: none; background: #edf2e7; }
 .ride-status .realtime-status { position: absolute; width: 8px; height: 8px; bottom: 10px; left: 29px; border-radius: 50%; overflow: hidden; font-size: 0; background: #fff; box-shadow: 0 0 0 2px #fffef8; }
 .ride-status .realtime-status::before { flex-basis: 8px; height: 8px; }
-.map-consent { position: absolute; z-index: 1; top: 53%; left: 50%; transform: translate(-50%,-40%); width: min(290px, calc(100% - 44px)); padding: 20px; border: 1px solid #dce2d6; border-radius: 18px; background: #fffef8; text-align: center; box-shadow: 0 6px 24px rgba(45,62,34,.07); }
-.map-consent > .ui-icon { width: 30px; height: 30px; color: var(--brand); }
-.map-consent h2 { margin: 8px 0; font-size: 16px; }
-.map-consent p { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.65; }
-.map-consent button { width: 100%; margin: 0; min-height: 44px; background: var(--brand); }
-.map-consent small { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
 .map-tools { position: absolute; z-index: 2; right: 12px; bottom: 96px; }
 .map-tools button { display: grid; place-items: center; width: 36px; height: 36px; margin: 0; padding: 6px; border-radius: 9px; background: #fffef8; color: var(--ink); box-shadow: 0 2px 8px #27312922; }
 .map-note { position: absolute; z-index: 1; left: 12px; bottom: 15px; max-width: calc(100% - 66px); margin: 0; padding: 4px 8px; border-radius: 6px; background: #fffef8f2; color: #4c5a4f; font-size: 10px; }
@@ -436,7 +443,7 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .action-dock__heading { display: flex; align-items: center; justify-content: start; gap: 8px; }
 .action-dock__icon { color: var(--brand); width: 21px; height: 21px; flex-basis: 21px; }
 .action-dock #actionGuidance { flex: 1; margin: 0; font-size: 16px; font-weight: 700; line-height: 1.5; }
-.action-dock #offerDeadline { flex-basis: 100%; width: max-content; margin-top: 3px; background: #f5ecd2; }
+.action-dock .offer-countdown { margin: 8px 0 2px; }
 #actionDestination { margin: 10px 0 16px; line-height: 1.65; font-size: 12px; }
 .compact-delivery { margin: 16px 0 18px; }
 .compact-delivery dl { display: block; }
@@ -457,21 +464,15 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .map-settings p { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .location-choice { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 12px; }
 .location-choice button { flex: 1 1 220px; margin: 0; }
-.map-shell[data-sheet-state="expanded"] .map-consent { display: none; }
 @media (min-width: 701px) {
   .map-stage { inset: 0; }
   .ride-status { left: 28px; transform: none; }
   .bottom-sheet { left: 28px; transform: none; bottom: 24px; width: 400px; }
-  .map-consent { left: calc(50% + 190px); }
   .map-note { left: auto; right: 64px; bottom: 14px; }
 }
 @media (max-height: 600px) {
   .ride-status { top: 6px; min-height: 48px; padding-block: 2px; }
   .bottom-sheet { bottom: 6px; max-height: calc(100dvh - 80px); }
-  .map-consent { top: 68px; transform: translateX(-50%); padding: 10px; }
-  .map-consent > .ui-icon, .map-consent small { display: none; }
-  .map-consent h2 { margin-top: 0; font-size: 13px; }
-  .map-consent p { font-size: 10px; margin-bottom: 6px; }
   .compact-delivery { margin-block: 8px; }
   .compact-delivery__row { padding-block: 5px; }
   .action-dock { min-height: 0; flex: 0 1 auto; overflow-y: auto; padding: 4px 16px 12px; }

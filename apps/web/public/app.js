@@ -59,15 +59,16 @@ const sheetPanels = {
 const logoutButton = document.querySelector('#logoutButton');
 const actionGuidance = document.querySelector('#actionGuidance');
 const actionDestination = document.querySelector('#actionDestination');
+const offerCountdown = document.querySelector('#offerCountdown');
 const offerDeadline = document.querySelector('#offerDeadline');
+const offerCountdownProgress = document.querySelector('#offerCountdownProgress');
 const compactDelivery = document.querySelector('#compactDelivery');
 const offlineQueueStatus = document.querySelector('#offlineQueueStatus');
 const deliveryMap = DeliveryFlowMap.create({
-  canvas: document.querySelector('#deliveryMap'), consent: document.querySelector('#mapConsent'),
+  canvas: document.querySelector('#deliveryMap'),
   tools: document.querySelector('#mapTools'), note: document.querySelector('#mapNote'),
   error: document.querySelector('#mapError'), toggle: document.querySelector('#toggleMap'),
 });
-document.querySelector('#enableMap').addEventListener('click', () => deliveryMap.enable());
 document.querySelector('#fitMap').addEventListener('click', () => deliveryMap.overview());
 document.querySelector('#toggleMap').addEventListener('click', () => {
   if (deliveryMap.isEnabled()) {
@@ -81,7 +82,7 @@ document.querySelector('#toggleMap').addEventListener('click', () => {
 });
 let sheetView = 'delivery';
 let currentDeliveryKey = null;
-let offerHasExpired = false;
+let mapStartedForSession = false;
 const sheetScrollPositions = { delivery: 0, activity: 0, settings: 0 };
 let driverToken = localStorage.getItem('deliveryFlowAccessToken');
 let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'register';
@@ -580,7 +581,10 @@ function deliveryProgressMarkup(status) {
     return `<li class="delivery-progress__step${stateClass}"${index === currentIndex ? ' aria-current="step"' : ''}>${stage.label}</li>`;
   }).join('');
   return `<section class="delivery-progress" aria-label="配達の進行状態">
-    <p class="delivery-progress__guidance">${guidance}</p>
+    <header class="delivery-progress__heading">
+      <span>今回の配達 · ステップ ${Math.max(1, currentIndex + 1)}/4</span>
+      <h2>${guidance}</h2>
+    </header>
     <ol>${steps}</ol>
   </section>`;
 }
@@ -658,9 +662,15 @@ function renderActionDock() {
     : state.driver.status === 'OFFERED' ? '新しい配達が届いています'
       : state.driver.status === 'IDLE' ? '京都で、次の配達を。' : '今日も、安全な配達を。';
   offerDeadline.textContent = view.deadline;
-  offerDeadline.classList.toggle('hidden', !view.deadline);
+  offerCountdown.classList.toggle('hidden', !view.countdown);
+  if (view.countdown) {
+    offerCountdownProgress.max = view.countdown.durationSeconds;
+    offerCountdownProgress.value = view.countdown.progressValue;
+    offerCountdownProgress.setAttribute('aria-valuetext', view.expired
+      ? '受付終了' : `残り${view.countdown.remainingSeconds}秒`);
+  }
+  offerCountdown.classList.toggle('offer-countdown--urgent', Boolean(view.countdown?.urgent));
   offerDeadline.classList.toggle('offer-deadline--expired', view.expired);
-  offerHasExpired = view.expired;
   DeliveryFlowUi.updateMarkup(actions, DeliveryFlowUi.renderActions(view));
   actions.querySelectorAll('button').forEach((element) => {
     element.disabled = isLoading || offlineQueue.length > 0;
@@ -883,6 +893,7 @@ async function refresh(options = {}) {
 
 async function performRefresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
+    mapStartedForSession = false;
     deliveryMap.disable();
     currentBrowserLocation = null;
     disconnectRealtime();
@@ -908,6 +919,7 @@ async function performRefresh({ preserveMessage = false } = {}) {
     loadOfflineQueue();
     registrationCard.classList.add('hidden');
     workflow.classList.remove('hidden');
+    if (!mapStartedForSession) mapStartedForSession = deliveryMap.enable();
     render();
     const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
     const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
@@ -1272,7 +1284,7 @@ setBottomSheetState(bottomSheetState);
 setRankingPeriod(activeRankingPeriod);
 refresh();
 setInterval(() => {
-  if (state?.offer && !isLoading && DeliveryFlowUi.getActionView(state).expired !== offerHasExpired) renderActionDock();
+  if (state?.offer && !isLoading) renderActionDock();
 }, 1000);
 setInterval(() => {
   const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;
