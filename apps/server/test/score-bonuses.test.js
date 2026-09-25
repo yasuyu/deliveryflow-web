@@ -1,6 +1,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { buildScoreSnapshot, isLateNight } = require('../src/modules/score/score-bonuses');
+const {
+  buildScoreSnapshot,
+  distanceBonusPoints,
+  isLateNight,
+} = require('../src/modules/score/score-bonuses');
 
 const rules = [
   { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100, active: true },
@@ -25,6 +29,24 @@ test('雨天と深夜のボーナスを重ねて内訳を固定できる', () =>
     { code: 'DELIVERY_COMPLETED', points: 100 },
     { code: 'WEATHER_RAIN', points: 30 },
     { code: 'TIME_LATE_NIGHT', points: 50 },
+  ]);
+});
+
+test('店舗から配達先までの直線距離を250m単位のボーナスへ変換する', () => {
+  assert.equal(distanceBonusPoints(500), 0);
+  assert.equal(distanceBonusPoints(501), 10);
+  assert.equal(distanceBonusPoints(750), 10);
+  assert.equal(distanceBonusPoints(751), 20);
+  assert.equal(distanceBonusPoints(5000), 100);
+
+  const snapshot = buildScoreSnapshot(rules, {
+    pickupToDropoffMeters: 1250,
+    at: new Date('2026-09-14T12:00:00+09:00'),
+  });
+  assert.equal(snapshot.estimatedPoints, 130);
+  assert.deepEqual(snapshot.breakdown.map(({ code, points }) => ({ code, points })), [
+    { code: 'DELIVERY_COMPLETED', points: 100 },
+    { code: 'DELIVERY_DISTANCE', points: 30 },
   ]);
 });
 

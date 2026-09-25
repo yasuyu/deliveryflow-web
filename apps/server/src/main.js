@@ -382,9 +382,14 @@ async function createNextOffer(driver, client = prisma) {
   if (!candidates.some((candidate) => candidate.id === driver.id)) return;
 
   const rules = await client.scoreRule.findMany();
+  const pickupToDropoffMeters = distanceMeters(
+    { latitude: store.latitude, longitude: store.longitude },
+    { latitude: route.dropoff.latitude, longitude: route.dropoff.longitude },
+  );
   const scoreSnapshot = buildScoreSnapshot(rules, {
     weatherCondition: simulatedWeatherCondition,
     at: scoreEvaluationTime(),
+    pickupToDropoffMeters,
   });
   const order = await client.order.create({
     data: {
@@ -561,17 +566,27 @@ async function updateSimulatorWeather(condition) {
   simulatedWeatherCondition = condition;
 
   const rules = await prisma.scoreRule.findMany();
-  const scoreSnapshot = buildScoreSnapshot(rules, {
-    weatherCondition: simulatedWeatherCondition,
-    at: scoreEvaluationTime(),
-  });
-  await prisma.offer.updateMany({
+  const pendingOffers = await prisma.offer.findMany({
     where: { status: 'PENDING', driver: { status: 'IDLE' } },
-    data: {
-      estimatedPoints: scoreSnapshot.estimatedPoints,
-      scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
-    },
+    include: { order: { include: { store: true } } },
   });
+  await prisma.$transaction(pendingOffers.map((offer) => {
+    const scoreSnapshot = buildScoreSnapshot(rules, {
+      weatherCondition: simulatedWeatherCondition,
+      at: scoreEvaluationTime(),
+      pickupToDropoffMeters: distanceMeters(
+        { latitude: offer.order.store.latitude, longitude: offer.order.store.longitude },
+        { latitude: offer.order.dropoffLatitude, longitude: offer.order.dropoffLongitude },
+      ),
+    });
+    return prisma.offer.update({
+      where: { id: offer.id },
+      data: {
+        estimatedPoints: scoreSnapshot.estimatedPoints,
+        scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
+      },
+    });
+  }));
   return {
     weatherCondition: simulatedWeatherCondition,
     message: condition === 'RAIN'
@@ -737,7 +752,7 @@ async function deliveryHistory(driverId, searchParams) {
     prisma.assignment.count({ where }),
     prisma.assignment.findMany({
       where,
-      include: { order: { include: { store: true } } },
+      include: { order: { include: { store: true } }, scoreEvent: true },
       orderBy: { [dateField]: 'desc' },
       take: 20,
     }),
@@ -754,7 +769,13 @@ async function deliveryHistory(driverId, searchParams) {
       from: filters.fromValue,
       to: filters.toValue,
     },
-    deliveries,
+    deliveries: deliveries.map((assignment) => ({
+      ...assignment,
+      scoreEvent: assignment.scoreEvent ? {
+        ...assignment.scoreEvent,
+        breakdown: parseBreakdown(assignment.scoreEvent.breakdown),
+      } : null,
+    })),
   };
 }
 
@@ -932,7 +953,7 @@ async function pickupAssignment(driver, assignmentId) {
   }
   const assignment = await prisma.assignment.findFirst({
     where: { id: assignmentId, driverId: driver.id, pickedUpAt: null },
-    include: { order: true },
+    include: { order: { include: { store: true } } },
   });
   if (!assignment || assignment.order.status !== 'ASSIGNED') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '受取できる配達がありません');
@@ -960,7 +981,7 @@ async function completeAssignment(driver, assignmentId) {
       pickedUpAt: { not: null },
       deliveredAt: null,
     },
-    include: { order: true },
+    include: { order: { include: { store: true } } },
   });
   if (!assignment || assignment.order.status !== 'PICKED_UP') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる配達がありません');
@@ -994,6 +1015,7 @@ async function completeAssignment(driver, assignmentId) {
         const fallback = buildScoreSnapshot(await transaction.scoreRule.findMany(), {
           weatherCondition: 'CLEAR',
           at: new Date('2000-01-01T12:00:00+09:00'),
+          pickupToDropoffMeters: routeDistance(assignment.order, driver).pickupToDropoffMeters,
         });
         breakdown = fallback.breakdown;
         awardedPoints = fallback.estimatedPoints;

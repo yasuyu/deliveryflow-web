@@ -17,13 +17,15 @@
   function routePlan(order, currentLocation, pickedUp = false) {
     const points = orderPoints(order);
     const current = point(currentLocation?.latitude, currentLocation?.longitude);
-    const activeDestination = pickedUp ? points.dropoff : points.pickup;
-    const activePath = current && activeDestination ? [current, activeDestination] : [];
-    const upcomingPath = !pickedUp && points.pickup && points.dropoff
+    const toPickupPath = !pickedUp && current && points.pickup ? [current, points.pickup] : [];
+    const deliveryPath = points.pickup && points.dropoff
       ? [points.pickup, points.dropoff] : [];
-    const fallbackPath = !current && points.pickup && points.dropoff
-      ? [points.pickup, points.dropoff] : [];
-    return { ...points, current, activePath, upcomingPath, fallbackPath };
+    return { ...points, current, toPickupPath, deliveryPath };
+  }
+
+  function formatDistance(meters) {
+    if (!Number.isFinite(meters)) return '';
+    return meters < 1000 ? `約${Math.round(meters)}m` : `約${(meters / 1000).toFixed(1)}km`;
   }
 
   function create({ canvas, consent, tools, note, error, toggle }) {
@@ -41,7 +43,11 @@
       const rect = canvas.getBoundingClientRect();
       if (rect.height < 190) return;
       const plan = routePlan(currentOrder, currentOptions.currentLocation, currentOptions.pickedUp);
-      const points = [plan.current, plan.pickup, plan.dropoff].filter(Boolean);
+      const points = [
+        ...(!currentOptions.pickedUp ? [plan.current] : []),
+        plan.pickup,
+        plan.dropoff,
+      ].filter(Boolean);
       if (points.length) map.fitBounds(points, { paddingTopLeft: [rect.width > 700 ? 465 : 40, 105], paddingBottomRight: [70, 65], maxZoom: 16, animate: false });
       else map.setView(defaultCenter, 15, { animate: false });
     }
@@ -51,7 +57,7 @@
       if (!map) return;
       const plan = routePlan(order, options.currentLocation, options.pickedUp);
       const points = { pickup: plan.pickup, dropoff: plan.dropoff };
-      const key = JSON.stringify([order?.id, plan]);
+      const key = JSON.stringify([order?.id, plan, options.pickupToDropoffMeters]);
       if (key === previousKey) return;
       previousKey = key;
       markers.clearLayers();
@@ -77,18 +83,15 @@
         tooltip.textContent = label + ' · ' + (kind === 'pickup' ? order.store.name : order.dropoffName);
         root.L.marker(coords, { icon, title: tooltip.textContent, alt: label }).bindTooltip(tooltip).addTo(markers);
       }
-      if (plan.activePath.length) {
-        root.L.polyline(plan.activePath, { color: '#2877c7', weight: 5, dashArray: '8 8', interactive: false }).addTo(markers);
+      if (plan.toPickupPath.length) {
+        root.L.polyline(plan.toPickupPath, { color: '#78958c', weight: 3, dashArray: '7 9', interactive: false }).addTo(markers);
       }
-      if (plan.upcomingPath.length) {
-        root.L.polyline(plan.upcomingPath, { color: plan.current ? '#78958c' : '#397dc9', weight: plan.current ? 3 : 4, dashArray: '7 9', interactive: false }).addTo(markers);
+      if (plan.deliveryPath.length) {
+        root.L.polyline(plan.deliveryPath, { color: '#2877c7', weight: 5, dashArray: '8 8', interactive: false }).addTo(markers);
       }
-      if (plan.fallbackPath.length && !plan.upcomingPath.length) {
-        root.L.polyline(plan.fallbackPath, { color: '#397dc9', weight: 4, dashArray: '7 9', interactive: false }).addTo(markers);
-      }
-      note.textContent = plan.activePath.length
-        ? (options.pickedUp ? '青い点線: 現在地 → 配達先（直線）'
-          : '青い点線: 現在地 → 店舗（直線） · 灰色: 次の区間')
+      const deliveryDistance = formatDistance(options.pickupToDropoffMeters);
+      note.textContent = plan.deliveryPath.length
+        ? `青い点線: 店舗 → 配達先（直線${deliveryDistance ? ` ${deliveryDistance}` : ''}）${plan.toPickupPath.length ? ' · 灰色: 現在地 → 店舗' : ''}`
         : plan.current ? '青い点: 更新した現在地' : '点線は直線 · 現在地を更新すると地図に表示';
       note.classList.toggle('hidden', !plan.current && !points.pickup && !points.dropoff);
       overview();
@@ -151,7 +154,7 @@
     return { enable, disable, update, overview, isEnabled: () => Boolean(map),
       refitAfterResize: () => { showOverviewAfterResize = true; } };
   }
-  const api = { defaultCenter, orderPoints, routePlan, create };
+  const api = { defaultCenter, formatDistance, orderPoints, routePlan, create };
   root.DeliveryFlowMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window === 'undefined' ? globalThis : window));

@@ -26,7 +26,6 @@ const historyFilterReset = document.querySelector('#historyFilterReset');
 const historyResultCount = document.querySelector('#historyResultCount');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
-const scoreEvents = document.querySelector('#scoreEvents');
 const currentTitle = document.querySelector('#currentTitle');
 const nextTitle = document.querySelector('#nextTitle');
 const titleProgress = document.querySelector('#titleProgress');
@@ -85,6 +84,7 @@ let authView = localStorage.getItem('deliveryFlowDriverId') ? 'login' : 'registe
 let state;
 let currentBrowserLocation = null;
 let displayedOrder = null;
+let displayedRouteDistance = null;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
 let scoreState = {
   currentScore: 0,
@@ -461,6 +461,7 @@ function showOrder(
 ) {
   card.classList.remove('hidden');
   displayedOrder = order;
+  displayedRouteDistance = routeDistance;
   const statusLabel = {
     OFFERING: 'オファー確認中',
     ASSIGNED: '店舗へ移動中',
@@ -535,33 +536,6 @@ function renderScore() {
   nextTitle.textContent = scoreState.title.next
     ? `次の「${scoreState.title.next.name}」まで、あと${scoreState.title.next.pointsNeeded}ポイント`
     : '最高ランクに到達しました。';
-  scoreEvents.replaceChildren();
-  if (!scoreState.recentEvents.length) {
-    const item = document.createElement('li');
-    item.className = 'score-events__empty';
-    item.textContent = '配達を完了すると、ここに加点履歴が表示されます。';
-    scoreEvents.append(item);
-    return;
-  }
-  for (const event of scoreState.recentEvents) {
-    const item = document.createElement('li');
-    const reason = document.createElement('strong');
-    const destination = document.createElement('span');
-    const points = document.createElement('b');
-    const breakdown = document.createElement('span');
-    const time = document.createElement('time');
-    reason.textContent = event.reason;
-    destination.textContent = event.assignment.order.dropoffName;
-    points.textContent = `+${event.points}`;
-    breakdown.className = 'score-event-breakdown';
-    breakdown.textContent = event.breakdown?.length
-      ? event.breakdown.map((item) => `${item.label} +${item.points}`).join(' / ')
-      : event.reason;
-    time.dateTime = event.createdAt;
-    time.textContent = formatJapanTime(event.createdAt);
-    item.append(reason, destination, points, time, breakdown);
-    scoreEvents.append(item);
-  }
 }
 
 function renderRankingPeriod(period, list, meElement) {
@@ -620,14 +594,24 @@ function renderHistory() {
     const route = document.createElement('span');
     const time = document.createElement('time');
     const status = document.createElement('span');
+    const points = document.createElement('b');
+    const breakdown = document.createElement('span');
     title.textContent = assignment.order.store.name;
+    route.className = 'history-route';
     route.textContent = `${assignment.order.pickupName} → ${assignment.order.dropoffName}`;
     const occurredAt = assignment.deliveredAt || assignment.pickedUpAt || assignment.acceptedAt;
     time.dateTime = occurredAt;
+    time.className = 'history-time';
     time.textContent = formatJapanTime(occurredAt);
     status.className = 'history-status';
     status.textContent = { ASSIGNED: '受諾済み', PICKED_UP: '受取済み', DELIVERED: '完了' }[assignment.order.status] || assignment.order.status;
-    item.append(title, route, status, time);
+    points.className = 'history-points';
+    points.textContent = assignment.scoreEvent ? `+${assignment.scoreEvent.points} pt` : '加点前';
+    breakdown.className = 'history-breakdown';
+    breakdown.textContent = assignment.scoreEvent?.breakdown?.length
+      ? assignment.scoreEvent.breakdown.map((entry) => `${entry.label} +${entry.points}`).join(' / ')
+      : assignment.order.status === 'DELIVERED' ? '加点履歴なし' : '配達完了後に加点されます';
+    item.append(title, route, status, time, points, breakdown);
     deliveryHistoryList.append(item);
   }
 }
@@ -660,6 +644,7 @@ function render() {
     : 'オファーを確認すると、料金・受取場所・届け先がここに表示されます。';
   if (!nextDeliveryKey) {
     displayedOrder = null;
+    displayedRouteDistance = null;
     DeliveryFlowUi.updateMarkup(detail, '', '');
   }
   renderScore();
@@ -704,6 +689,7 @@ function render() {
   deliveryMap.update(displayedOrder, {
     currentLocation: currentBrowserLocation,
     pickedUp: Boolean(state.assignment?.pickedUpAt),
+    pickupToDropoffMeters: displayedRouteDistance?.pickupToDropoffMeters,
   });
 }
 
