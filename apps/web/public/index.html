@@ -140,18 +140,23 @@
       <section class="card ranking-card">
         <p class="eyebrow">DRIVER RANKING</p><h2>配達員ランキング</h2>
         <p>同じスコアは同順位として、上位10名とあなたの順位を表示します。</p>
+        <div class="ranking-period-tabs" role="tablist" aria-label="ランキング期間">
+          <button id="monthlyRankingTab" type="button" role="tab" aria-selected="true" aria-controls="monthlyRankingPanel" data-ranking-period="monthly">今月</button>
+          <button id="currentRankingTab" type="button" role="tab" aria-selected="false" aria-controls="currentRankingPanel" data-ranking-period="current" tabindex="-1">14日間</button>
+          <button id="lifetimeRankingTab" type="button" role="tab" aria-selected="false" aria-controls="lifetimeRankingPanel" data-ranking-period="lifetime" tabindex="-1">全期間</button>
+        </div>
         <div class="ranking-grid">
-          <section aria-labelledby="monthlyRankingHeading">
+          <section id="monthlyRankingPanel" class="ranking-period" role="tabpanel" aria-labelledby="monthlyRankingTab" data-ranking-panel="monthly">
             <h3 id="monthlyRankingHeading">今月</h3>
             <p id="monthlyRankingMe" class="ranking-me">あなたの順位を読み込み中です。</p>
             <ol id="monthlyRanking" class="ranking-list"></ol>
           </section>
-          <section aria-labelledby="currentRankingHeading">
+          <section id="currentRankingPanel" class="ranking-period" role="tabpanel" aria-labelledby="currentRankingTab" data-ranking-panel="current" hidden>
             <h3 id="currentRankingHeading">直近14日</h3>
             <p id="currentRankingMe" class="ranking-me">あなたの順位を読み込み中です。</p>
             <ol id="currentRanking" class="ranking-list"></ol>
           </section>
-          <section aria-labelledby="lifetimeRankingHeading">
+          <section id="lifetimeRankingPanel" class="ranking-period" role="tabpanel" aria-labelledby="lifetimeRankingTab" data-ranking-panel="lifetime" hidden>
             <h3 id="lifetimeRankingHeading">全期間</h3>
             <p id="lifetimeRankingMe" class="ranking-me">あなたの順位を読み込み中です。</p>
             <ol id="lifetimeRanking" class="ranking-list"></ol>

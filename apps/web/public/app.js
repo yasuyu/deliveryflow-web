@@ -35,6 +35,8 @@ const lifetimeRankingList = document.querySelector('#lifetimeRanking');
 const currentRankingMe = document.querySelector('#currentRankingMe');
 const lifetimeRankingMe = document.querySelector('#lifetimeRankingMe');
 const monthlyRankingMe = document.querySelector('#monthlyRankingMe');
+const rankingPeriodTabs = [...document.querySelectorAll('[data-ranking-period]')];
+const rankingPeriodPanels = [...document.querySelectorAll('[data-ranking-panel]')];
 const weatherSimulatorForm = document.querySelector('#weatherSimulatorForm');
 const weatherCondition = document.querySelector('#weatherCondition');
 const weatherSimulatorStatus = document.querySelector('#weatherSimulatorStatus');
@@ -113,6 +115,7 @@ let offlineQueue = [];
 let offlineQueueFlushing = false;
 let offlineQueueNotice = '';
 let bottomSheetState = 'collapsed';
+let activeRankingPeriod = 'monthly';
 let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
 
@@ -247,6 +250,31 @@ document.querySelectorAll('[data-open-view]').forEach((button) => {
   button.addEventListener('click', () => {
     setBottomSheetState('expanded');
     setSheetView(button.dataset.openView, { focus: true });
+  });
+});
+
+function setRankingPeriod(period, { focus = false } = {}) {
+  activeRankingPeriod = rankingPeriodTabs.some((tab) => tab.dataset.rankingPeriod === period)
+    ? period : 'monthly';
+  rankingPeriodTabs.forEach((tab) => {
+    const selected = tab.dataset.rankingPeriod === activeRankingPeriod;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    if (selected && focus) tab.focus({ preventScroll: true });
+  });
+  rankingPeriodPanels.forEach((panel) => {
+    const selected = panel.dataset.rankingPanel === activeRankingPeriod;
+    panel.hidden = !selected;
+    panel.setAttribute('aria-hidden', String(!selected));
+  });
+}
+
+rankingPeriodTabs.forEach((tab) => {
+  tab.addEventListener('click', () => setRankingPeriod(tab.dataset.rankingPeriod));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    setRankingPeriod(DeliveryFlowUi.nextRankingPeriod(activeRankingPeriod, event.key), { focus: true });
   });
 });
 
@@ -662,14 +690,21 @@ function renderRankingPeriod(period, list, meElement) {
     ? [period.me.monthlyTitle, period.me.lifetimeTitle].filter(Boolean)
     : [];
   meElement.textContent = period.me
-    ? `あなたは ${period.me.rank}位 · ${period.me.score}ポイント${meLabels.length ? ` · ${meLabels.join(' · ')}` : ''}`
+    ? `あなたの順位: ${period.me.rank}位 · ${period.me.score}ポイント${meLabels.length ? ` · ${meLabels.join(' · ')}` : ''}`
     : 'あなたの順位はまだありません。';
 
   for (const entry of period.leaders) {
     const item = document.createElement('li');
     const rank = document.createElement('strong');
+    const driver = document.createElement('span');
     const name = document.createElement('span');
+    const badges = document.createElement('span');
     const score = document.createElement('b');
+    item.dataset.rank = String(entry.rank);
+    rank.className = 'ranking-rank';
+    driver.className = 'ranking-driver';
+    name.className = 'ranking-driver__name';
+    badges.className = 'ranking-driver__badges';
     rank.textContent = `${entry.rank}位`;
     name.textContent = entry.name;
     score.textContent = `${entry.score} pt`;
@@ -677,10 +712,20 @@ function renderRankingPeriod(period, list, meElement) {
       item.className = 'ranking-list__current';
       name.textContent += '（あなた）';
     }
-    if (entry.monthlyTitle) name.textContent += ` · ${entry.monthlyTitle}`;
-    if (entry.lifetimeTitle) name.textContent += ` · ${entry.lifetimeTitle}`;
-    item.append(rank, name, score);
+    for (const title of [entry.monthlyTitle, entry.lifetimeTitle].filter(Boolean)) {
+      const badge = document.createElement('small');
+      badge.textContent = title;
+      badges.append(badge);
+    }
+    driver.append(name, badges);
+    item.append(rank, driver, score);
     list.append(item);
+  }
+  if (!period.leaders.length) {
+    const empty = document.createElement('li');
+    empty.className = 'ranking-empty';
+    empty.textContent = 'この期間のランキングはまだありません。';
+    list.append(empty);
   }
 }
 
@@ -1224,6 +1269,7 @@ window.addEventListener('offline', () => {
 });
 
 setBottomSheetState(bottomSheetState);
+setRankingPeriod(activeRankingPeriod);
 refresh();
 setInterval(() => {
   if (state?.offer && !isLoading && DeliveryFlowUi.getActionView(state).expired !== offerHasExpired) renderActionDock();

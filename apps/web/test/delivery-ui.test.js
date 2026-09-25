@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { escapeHtml, getActionView, renderActions, updateMarkup } = require('../public/delivery-ui');
+const {
+  escapeHtml, getActionView, nextRankingPeriod, renderActions, updateMarkup,
+} = require('../public/delivery-ui');
 
 const now = Date.parse('2026-09-21T09:00:00Z');
 const order = {
@@ -83,6 +85,15 @@ test('保存中は主操作と副操作をすべて無効にする', () => {
   const view = getActionView(offered(), now);
   assert.equal((renderActions(view, { loading: true }).match(/ disabled/g) || []).length, 3);
   assert.doesNotMatch(renderActions(view), / disabled/);
+});
+
+test('ランキング期間を左右キーと端キーで切り替える', () => {
+  assert.equal(nextRankingPeriod('monthly', 'ArrowRight'), 'current');
+  assert.equal(nextRankingPeriod('current', 'ArrowRight'), 'lifetime');
+  assert.equal(nextRankingPeriod('lifetime', 'ArrowRight'), 'monthly');
+  assert.equal(nextRankingPeriod('monthly', 'ArrowLeft'), 'lifetime');
+  assert.equal(nextRankingPeriod('current', 'Home'), 'monthly');
+  assert.equal(nextRankingPeriod('current', 'End'), 'lifetime');
 });
 
 test('表示文字と操作属性に含まれるHTMLをエスケープする', () => {

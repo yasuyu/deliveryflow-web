@@ -220,14 +220,29 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .title-summary span { display: block; color: var(--muted); font-size: 12px; }
 .title-summary strong { display: block; margin-top: 4px; color: var(--brand-dark); font-size: 24px; }
 .title-summary progress { width: 100%; height: 12px; accent-color: var(--brand); }
-.ranking-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-top: 20px; }
-.ranking-grid h3 { margin: 0 0 8px; }
-.ranking-me { margin: 0 0 12px; padding: 10px; border-radius: 7px; background: #edf3ed; color: var(--brand-dark); font-size: 12px; font-weight: 700; }
+.ranking-period-tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; margin-top: 18px; padding: 4px; border-radius: 11px; background: #edf1e9; }
+.ranking-period-tabs button { min-width: 0; min-height: 40px; margin: 0; padding: 8px 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; box-shadow: none; }
+.ranking-period-tabs button[aria-selected="true"] { background: #fff; color: var(--brand-dark); box-shadow: 0 1px 5px rgba(39,92,44,.14); }
+.ranking-period-tabs button:not(:disabled):hover { transform: none; box-shadow: none; background: #f8faf6; }
+.ranking-grid { display: block; margin-top: 14px; }
+.ranking-period[hidden] { display: none; }
+.ranking-grid h3 { margin: 0 0 8px; font-size: 18px; }
+.ranking-me { margin: 0 0 12px; padding: 11px 12px; border-radius: 8px; background: #edf3ed; color: var(--brand-dark); font-size: 12px; font-weight: 700; line-height: 1.55; }
 .ranking-list { margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
-.ranking-list li { display: grid; grid-template-columns: 36px minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
+.ranking-list li { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: 10px; align-items: center; min-width: 0; padding: 13px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .ranking-list strong, .ranking-list b { font-family: 'DM Mono', monospace; }
-.ranking-list b { color: var(--brand); }
-.ranking-list__current { background: #fff4dc; }
+.ranking-rank { font-size: 13px; white-space: nowrap; }
+.ranking-list li[data-rank="1"] .ranking-rank { color: #9a6a00; }
+.ranking-list li[data-rank="2"] .ranking-rank { color: #68726c; }
+.ranking-list li[data-rank="3"] .ranking-rank { color: #995d38; }
+.ranking-driver { display: block; min-width: 0; }
+.ranking-driver__name { display: block; color: var(--ink); font-weight: 700; line-height: 1.45; overflow-wrap: break-word; }
+.ranking-driver__badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ranking-driver__badges:empty { display: none; }
+.ranking-driver__badges small { padding: 2px 6px; border-radius: 999px; background: #e8efe7; color: var(--brand-dark); font-size: 10px; line-height: 1.4; }
+.ranking-list b { color: var(--brand); font-size: 13px; white-space: nowrap; }
+.ranking-list__current { border-left: 3px solid var(--accent); background: #fff4dc; }
+.ranking-list .ranking-empty { display: block; padding: 18px 8px; color: var(--muted); text-align: center; }
 .history-summary strong { color: var(--brand-dark); font: 700 28px 'DM Mono', monospace; }
 .history-filter { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px 18px; margin-top: 22px; padding: 18px; border-radius: 10px; background: #f5f7f3; }
 .history-filter label { margin: 4px 0; min-width: 0; font-size: 13px; }
@@ -325,7 +340,7 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
   .score-summary { gap: 10px; }
   .score-summary p { padding: 15px; }
   .score-summary strong { font-size: 29px; }
-  .ranking-grid { grid-template-columns: 1fr; gap: 24px; }
+  .ranking-period-tabs button { font-size: 11px; }
   .history-filter { grid-template-columns: 1fr; padding: 14px; }
   .history-list li { grid-template-columns: minmax(0,1fr) auto; gap: 5px 10px; }
   .history-list .history-status { grid-column: 2; grid-row: 1; }
