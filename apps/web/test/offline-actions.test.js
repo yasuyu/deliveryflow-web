@@ -88,7 +88,16 @@ test('通信切断では操作を残し、API競合では確認待ちにする',
   assert.equal(conflictResult.remaining[0].status, 'blocked');
   assert.equal(conflictResult.remaining[0].error.code, 'OFFER_ALREADY_TAKEN');
 
+  let blockedSendCount = 0;
+  const stopped = await OfflineActions.flush(conflictResult.remaining, async () => {
+    blockedSendCount += 1;
+  });
+  assert.equal(stopped.reason, 'blocked');
+  assert.equal(blockedSendCount, 0);
+
   const retried = OfflineActions.retry(conflictResult.remaining);
   assert.equal(retried[0].status, 'pending');
   assert.equal(retried[0].idempotencyKey, 'pickup-key');
+  const resumed = await OfflineActions.flush(retried, async () => {});
+  assert.equal(resumed.reason, 'complete');
 });
