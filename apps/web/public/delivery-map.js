@@ -14,11 +14,24 @@
     };
   }
 
+  function routePlan(order, currentLocation, pickedUp = false) {
+    const points = orderPoints(order);
+    const current = point(currentLocation?.latitude, currentLocation?.longitude);
+    const activeDestination = pickedUp ? points.dropoff : points.pickup;
+    const activePath = current && activeDestination ? [current, activeDestination] : [];
+    const upcomingPath = !pickedUp && points.pickup && points.dropoff
+      ? [points.pickup, points.dropoff] : [];
+    const fallbackPath = !current && points.pickup && points.dropoff
+      ? [points.pickup, points.dropoff] : [];
+    return { ...points, current, activePath, upcomingPath, fallbackPath };
+  }
+
   function create({ canvas, consent, tools, note, error, toggle }) {
     let map = null;
     let layer = null;
     let markers = null;
     let currentOrder = null;
+    let currentOptions = {};
     let previousKey = '';
     let resizeTimer;
     let hasTileError = false;
@@ -27,18 +40,31 @@
       if (!map) return;
       const rect = canvas.getBoundingClientRect();
       if (rect.height < 190) return;
-      const points = Object.values(orderPoints(currentOrder)).filter(Boolean);
+      const plan = routePlan(currentOrder, currentOptions.currentLocation, currentOptions.pickedUp);
+      const points = [plan.current, plan.pickup, plan.dropoff].filter(Boolean);
       if (points.length) map.fitBounds(points, { paddingTopLeft: [rect.width > 700 ? 465 : 40, 105], paddingBottomRight: [70, 65], maxZoom: 16, animate: false });
       else map.setView(defaultCenter, 15, { animate: false });
     }
-    function update(order) {
+    function update(order, options = {}) {
       currentOrder = order;
+      currentOptions = options;
       if (!map) return;
-      const points = orderPoints(order);
-      const key = JSON.stringify([order?.id, points]);
+      const plan = routePlan(order, options.currentLocation, options.pickedUp);
+      const points = { pickup: plan.pickup, dropoff: plan.dropoff };
+      const key = JSON.stringify([order?.id, plan]);
       if (key === previousKey) return;
       previousKey = key;
       markers.clearLayers();
+      if (plan.current) {
+        const label = '現在地';
+        const icon = root.L.divIcon({
+          className: 'delivery-map-marker delivery-map-marker--current',
+          html: '<span class="delivery-map-current-dot" aria-hidden="true"></span>',
+          iconSize: [38, 38], iconAnchor: [19, 19],
+        });
+        root.L.marker(plan.current, { icon, title: label, alt: label })
+          .bindTooltip(label).addTo(markers);
+      }
       for (const [kind, coords] of Object.entries(points)) {
         if (!coords) continue;
         const label = kind === 'pickup' ? '受取場所' : '配達先';
@@ -51,10 +77,20 @@
         tooltip.textContent = label + ' · ' + (kind === 'pickup' ? order.store.name : order.dropoffName);
         root.L.marker(coords, { icon, title: tooltip.textContent, alt: label }).bindTooltip(tooltip).addTo(markers);
       }
-      if (points.pickup && points.dropoff) {
-        root.L.polyline([points.pickup, points.dropoff], { color: '#397dc9', weight: 4, dashArray: '7 9', interactive: false }).addTo(markers);
+      if (plan.activePath.length) {
+        root.L.polyline(plan.activePath, { color: '#2877c7', weight: 5, dashArray: '8 8', interactive: false }).addTo(markers);
       }
-      note.classList.toggle('hidden', !points.pickup && !points.dropoff);
+      if (plan.upcomingPath.length) {
+        root.L.polyline(plan.upcomingPath, { color: plan.current ? '#78958c' : '#397dc9', weight: plan.current ? 3 : 4, dashArray: '7 9', interactive: false }).addTo(markers);
+      }
+      if (plan.fallbackPath.length && !plan.upcomingPath.length) {
+        root.L.polyline(plan.fallbackPath, { color: '#397dc9', weight: 4, dashArray: '7 9', interactive: false }).addTo(markers);
+      }
+      note.textContent = plan.activePath.length
+        ? (options.pickedUp ? '青い点線: 現在地 → 配達先（直線）'
+          : '青い点線: 現在地 → 店舗（直線） · 灰色: 次の区間')
+        : plan.current ? '青い点: 更新した現在地' : '点線は直線 · 現在地を更新すると地図に表示';
+      note.classList.toggle('hidden', !plan.current && !points.pickup && !points.dropoff);
       overview();
     }
     function enable() {
@@ -88,7 +124,7 @@
       layer.on('load', () => { if (!hasTileError) error.classList.add('hidden'); });
       markers = root.L.layerGroup().addTo(map);
       previousKey = '';
-      update(currentOrder);
+      update(currentOrder, currentOptions);
       layer.addTo(map);
     }
     function disable() {
@@ -115,7 +151,7 @@
     return { enable, disable, update, overview, isEnabled: () => Boolean(map),
       refitAfterResize: () => { showOverviewAfterResize = true; } };
   }
-  const api = { defaultCenter, orderPoints, create };
+  const api = { defaultCenter, orderPoints, routePlan, create };
   root.DeliveryFlowMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window === 'undefined' ? globalThis : window));

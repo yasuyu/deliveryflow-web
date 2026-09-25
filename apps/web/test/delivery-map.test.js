@@ -3,7 +3,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { defaultCenter, orderPoints } = require('../public/delivery-map');
+const { defaultCenter, orderPoints, routePlan } = require('../public/delivery-map');
 const { renderCompactOrder } = require('../public/delivery-ui');
 
 const order = {
@@ -19,6 +19,23 @@ test('地図は京都中心部から始め、注文の地点だけを扱う', ()
   assert.deepEqual(orderPoints({ ...order, store: { latitude: null, longitude: '135' }, dropoffLatitude: Infinity }),
     { pickup: null, dropoff: null });
   assert.equal(orderPoints({ ...order, dropoffLatitude: 91 }).dropoff, null);
+});
+
+test('現在地と配達段階に合わせて地図上の直線を切り替える', () => {
+  const current = { latitude: 35.012, longitude: 135.765 };
+  const beforePickup = routePlan(order, current, false);
+  assert.deepEqual(beforePickup.current, [35.012, 135.765]);
+  assert.deepEqual(beforePickup.activePath, [beforePickup.current, beforePickup.pickup]);
+  assert.deepEqual(beforePickup.upcomingPath, [beforePickup.pickup, beforePickup.dropoff]);
+  assert.deepEqual(beforePickup.fallbackPath, []);
+
+  const afterPickup = routePlan(order, current, true);
+  assert.deepEqual(afterPickup.activePath, [afterPickup.current, afterPickup.dropoff]);
+  assert.deepEqual(afterPickup.upcomingPath, []);
+
+  const withoutLocation = routePlan(order, null, true);
+  assert.deepEqual(withoutLocation.activePath, []);
+  assert.deepEqual(withoutLocation.fallbackPath, [withoutLocation.pickup, withoutLocation.dropoff]);
 });
 
 test('配達カードは実際の座標・報酬を表示し、注文名をHTMLとして扱わない', () => {

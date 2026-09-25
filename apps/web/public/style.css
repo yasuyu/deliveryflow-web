@@ -106,11 +106,6 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .bottom-sheet__handle:not(:disabled):hover { transform: none; background: #f5f8f5; box-shadow: none; }
 .bottom-sheet__handle:focus-visible { outline-offset: -4px; }
 .bottom-sheet__grip { width: 42px; height: 4px; border-radius: 99px; background: #c7d2c9; }
-.sheet-nav { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); flex: 0 0 44px; gap: 6px; padding: 0 24px 6px; border-bottom: 1px solid var(--line); }
-.sheet-nav button { min-height: 38px; margin: 0; padding: 7px 8px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; }
-.sheet-nav button[aria-selected="true"] { background: #eaf3ed; color: var(--brand-dark); }
-.sheet-nav button:not(:disabled):hover { transform: none; box-shadow: none; background: #f1f5f1; }
-.sheet-nav button:focus-visible { outline-offset: -2px; }
 .sheet-content { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #c2cfc5 transparent; scroll-padding-block: 16px; }
 .sheet-panel { min-width: 0; }
 .sheet-panel.hidden { display: none; }
@@ -119,7 +114,7 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .sheet-panel > .card > .eyebrow, .sheet-panel > .learn > .eyebrow { display: none; }
 .sheet-panel > .card > h2, .sheet-panel > .learn > h2 { margin-bottom: 14px; font-size: 19px; }
 .sheet-panel p { overflow-wrap: anywhere; }
-.bottom-sheet[data-sheet-state="collapsed"] > .sheet-nav, .bottom-sheet[data-sheet-state="collapsed"] > .sheet-content { display: none; }
+.bottom-sheet[data-sheet-state="collapsed"] > .sheet-content { display: none; }
 .delivery-empty { padding: 32px 28px 38px; }
 .delivery-empty__icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 17px; border-radius: 12px; background: #fff1d0; color: #7a581d; font-size: 24px; }
 .delivery-empty h2 { margin: 0 0 10px; font-size: 23px; letter-spacing: -.02em; }
@@ -294,7 +289,6 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
   #mapDestination { margin-top: 6px; font-size: 13px; }
   .bottom-sheet { width: 100%; max-height: calc(100dvh - 64px); border-inline: 0; border-radius: 22px 22px 0 0; }
   .bottom-sheet__handle { border-radius: 22px 22px 0 0; }
-  .sheet-nav { padding-inline: 16px; }
   .sheet-panel > .card, .sheet-panel > .learn { padding: 22px 20px; }
   .delivery-empty { padding: 24px 20px 30px; }
   .delivery-empty h2 { font-size: 21px; }
@@ -407,17 +401,22 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .map-stage .leaflet-control-zoom a { width: 36px; height: 30px; line-height: 30px; color: #364b37; }
 .delivery-map-marker { display: grid; place-items: center; border: 3px solid #fff; border-radius: 50%; background: #3c8046; color: #fff; box-shadow: 0 2px 9px #253c3a44; }
 .delivery-map-marker--dropoff { background: #d86655; }
+.delivery-map-marker--current { background: #fff; border-color: #fff; }
+.delivery-map-current-dot { width: 17px; height: 17px; border: 4px solid #fff; border-radius: 50%; background: #2877c7; box-shadow: 0 0 0 3px rgba(40,119,199,.24); }
 .delivery-map-marker .ui-icon { width: 21px; height: 21px; }
 .bottom-sheet { width: min(420px, calc(100% - 24px)); bottom: max(12px, env(safe-area-inset-bottom)); max-height: calc(100dvh - 116px - env(safe-area-inset-bottom)); border: 1px solid #e3e4d7; border-radius: 26px; background: #fffef8; box-shadow: 0 5px 28px rgba(42,54,30,.17); }
 .bottom-sheet__handle { flex-basis: 26px; min-height: 26px; padding: 10px 0; border-radius: 26px 26px 0 0; background: #fffef8; }
 .bottom-sheet__grip { width: 32px; height: 3px; background: #d3d5c9; }
 #bottomSheetHandleLabel { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.sheet-nav { padding-inline: 16px; flex-basis: 42px; }
-.sheet-nav button { min-height: 36px; font-size: 12px; }
-.sheet-nav button[aria-selected="true"] { background: #eaf0e3; }
+.sheet-view-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; padding: 4px 18px 12px; border-bottom: 1px solid #e8e9dd; }
+.sheet-view-bar.hidden, .bottom-sheet[data-sheet-state="collapsed"] > .sheet-view-bar { display: none; }
+.sheet-view-bar__back { min-height: 40px; margin: 0; padding: 7px 10px; border: 1px solid #d8e1d9; border-radius: 9px; background: #f5f7f4; color: var(--brand-dark); font-size: 12px; }
+.sheet-view-bar strong { min-width: 0; color: var(--ink); font-size: 15px; }
 .sheet-panel > .card, .sheet-panel > .learn { padding: 20px; background: #fffef8; }
 .action-dock { padding: 4px 20px 16px; border-top: 1px solid #e8e9dd; background: #fffef8; box-shadow: none; }
 .bottom-sheet[data-sheet-state="collapsed"] .action-dock { border-top: 0; }
+.bottom-sheet[data-sheet-view="activity"] .action-dock,
+.bottom-sheet[data-sheet-view="settings"] .action-dock { display: none; }
 .action-dock__heading { display: flex; align-items: center; justify-content: start; gap: 8px; }
 .action-dock__icon { color: var(--brand); width: 21px; height: 21px; flex-basis: 21px; }
 .action-dock #actionGuidance { flex: 1; margin: 0; font-size: 16px; font-weight: 700; line-height: 1.5; }

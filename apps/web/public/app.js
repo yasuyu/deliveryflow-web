@@ -46,7 +46,14 @@ const bottomSheet = document.querySelector('#bottomSheet');
 const bottomSheetHandle = document.querySelector('#bottomSheetHandle');
 const bottomSheetHandleLabel = document.querySelector('#bottomSheetHandleLabel');
 const sheetContent = document.querySelector('#sheetContent');
-const sheetTabs = document.querySelectorAll('[data-sheet-view]');
+const sheetViewBar = document.querySelector('#sheetViewBar');
+const sheetViewTitle = document.querySelector('#sheetViewTitle');
+const returnToDelivery = document.querySelector('#returnToDelivery');
+const sheetPanels = {
+  delivery: document.querySelector('#deliveryPanel'),
+  activity: document.querySelector('#activityPanel'),
+  settings: document.querySelector('#settingsPanel'),
+};
 const logoutButton = document.querySelector('#logoutButton');
 const actionGuidance = document.querySelector('#actionGuidance');
 const actionDestination = document.querySelector('#actionDestination');
@@ -128,9 +135,8 @@ function setBottomSheetState(nextState, { announce = false } = {}) {
   };
   bottomSheetHandleLabel.textContent = labels[nextState];
   bottomSheetHandle.setAttribute('aria-label', `${labels[nextState]}。クリックでも切り替え、上下キーで調整できます`);
-  const navigation = document.querySelector('#sheetNavigation');
-  const focusIsInContent = sheetContent.contains(document.activeElement) || navigation.contains(document.activeElement);
-  navigation.inert = nextState === 'collapsed';
+  const focusIsInContent = sheetContent.contains(document.activeElement) || sheetViewBar.contains(document.activeElement);
+  sheetViewBar.inert = nextState === 'collapsed';
   sheetContent.inert = nextState === 'collapsed';
   if (announce || (nextState === 'collapsed' && focusIsInContent)) bottomSheetHandle.focus({ preventScroll: true });
 }
@@ -216,27 +222,22 @@ function setSheetView(view, { focus = false } = {}) {
   sheetScrollPositions[sheetView] = sheetContent.scrollTop;
   sheetView = view;
   bottomSheet.dataset.sheetView = view;
-  sheetTabs.forEach((tab) => {
-    const selected = tab.dataset.sheetView === view;
-    tab.setAttribute('aria-selected', String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-    document.getElementById(tab.getAttribute('aria-controls')).classList.toggle('hidden', !selected);
-    if (selected && focus) tab.focus({ preventScroll: true });
+  Object.entries(sheetPanels).forEach(([name, panel]) => {
+    const selected = name === view;
+    panel.classList.toggle('hidden', !selected);
+    panel.setAttribute('aria-hidden', String(!selected));
   });
+  const isDelivery = view === 'delivery';
+  sheetViewBar.classList.toggle('hidden', isDelivery);
+  sheetViewTitle.textContent = view === 'activity' ? '実績・ランキング' : view === 'settings' ? '設定' : '';
   sheetContent.scrollTop = sheetScrollPositions[view];
+  if (focus) {
+    (isDelivery ? sheetPanels.delivery : returnToDelivery)
+      .focus({ preventScroll: true });
+  }
 }
-
-sheetTabs.forEach((tab, index) => {
-  tab.addEventListener('click', () => setSheetView(tab.dataset.sheetView));
-  tab.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? sheetTabs.length - 1
-      : (index + (event.key === 'ArrowRight' ? 1 : -1) + sheetTabs.length) % sheetTabs.length;
-    setSheetView(sheetTabs[next].dataset.sheetView, { focus: true });
-  });
-});
 document.querySelector('[data-open-settings]').addEventListener('click', () => setSheetView('settings', { focus: true }));
+returnToDelivery.addEventListener('click', () => setSheetView('delivery', { focus: true }));
 document.querySelectorAll('[data-open-view]').forEach((button) => {
   button.addEventListener('click', () => {
     setBottomSheetState('expanded');
@@ -700,7 +701,10 @@ function render() {
     );
   }
   renderActionDock();
-  deliveryMap.update(displayedOrder);
+  deliveryMap.update(displayedOrder, {
+    currentLocation: currentBrowserLocation,
+    pickedUp: Boolean(state.assignment?.pickedUpAt),
+  });
 }
 
 async function refresh(options = {}) {
