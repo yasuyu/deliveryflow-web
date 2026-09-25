@@ -87,7 +87,20 @@
       + row('pin', '配達先', order.dropoffName, coordinate(order.dropoffLatitude, order.dropoffLongitude))
       + row('yen', '報酬', '¥' + Number(order.deliveryFeeYen).toLocaleString('ja-JP')) + '</dl>';
   }
-  const api = { escapeHtml, getActionView, renderActions, updateMarkup, renderCompactOrder };
+
+  const rankingPeriods = ['monthly', 'current', 'lifetime'];
+  function nextRankingPeriod(current, key) {
+    const currentIndex = Math.max(0, rankingPeriods.indexOf(current));
+    if (key === 'Home') return rankingPeriods[0];
+    if (key === 'End') return rankingPeriods.at(-1);
+    if (key === 'ArrowLeft') return rankingPeriods[(currentIndex - 1 + rankingPeriods.length) % rankingPeriods.length];
+    if (key === 'ArrowRight') return rankingPeriods[(currentIndex + 1) % rankingPeriods.length];
+    return rankingPeriods[currentIndex];
+  }
+
+  const api = {
+    escapeHtml, getActionView, renderActions, updateMarkup, renderCompactOrder, nextRankingPeriod,
+  };
   root.DeliveryFlowUi = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window === 'undefined' ? globalThis : window));
