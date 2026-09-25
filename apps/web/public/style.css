@@ -208,13 +208,6 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .score-summary span { font-size: 13px; }
 .score-summary strong { display: block; margin: 5px 0; color: var(--accent); font: 700 34px 'DM Mono', monospace; }
 .score-summary small { color: #d3dfd9; font-size: 11px; }
-.score-card h3 { margin: 26px 0 8px; }
-.score-events { margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
-.score-events li { display: grid; grid-template-columns: 100px minmax(0,1fr) auto 135px; gap: 8px 14px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.score-events span, .score-events time { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.score-events b { color: var(--brand); font: 700 18px 'DM Mono', monospace; }
-.score-events .score-events__empty { display: block; color: var(--muted); font-size: 13px; }
-.score-event-breakdown { grid-column: 1 / -1; }
 .title-summary { padding: 18px; border-left: 4px solid var(--accent); border-radius: 0 10px 10px 0; background: #fff6e2; }
 .title-summary p { margin: 0 0 10px; font-size: 13px; }
 .title-summary span { display: block; color: var(--muted); font-size: 12px; }
@@ -236,10 +229,12 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .history-filter__actions button { min-height: 44px; }
 .history-result-count { color: var(--muted); font-size: 13px; }
 .history-list { margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
-.history-list li { display: grid; grid-template-columns: 120px minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.history-list li { display: grid; grid-template-columns: 120px minmax(0,1fr) auto auto auto; gap: 8px 12px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .history-list span, .history-list time { font-size: 12px; overflow-wrap: anywhere; }
 .history-list time { color: var(--muted); }
 .history-status { padding: 4px 7px; border-radius: 5px; background: #e9eee8; color: var(--brand-dark); }
+.history-points { color: var(--brand); font: 700 16px 'DM Mono', monospace; white-space: nowrap; }
+.history-breakdown { grid-column: 2 / -1; color: var(--muted); }
 .history-list .history-empty { display: block; color: var(--muted); font-size: 13px; }
 .weather-simulator { display: flex; align-items: end; gap: 16px; padding: 16px; border-radius: 10px; background: #f5f7f3; }
 .weather-simulator label { margin: 0; }
@@ -324,13 +319,12 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
   .score-summary p { padding: 15px; }
   .score-summary strong { font-size: 29px; }
   .ranking-grid { grid-template-columns: 1fr; gap: 24px; }
-  .score-events li { grid-template-columns: minmax(0,1fr) auto; gap: 4px 10px; }
-  .score-events li b { grid-column: 2; grid-row: 1; }
-  .score-events li span, .score-events li time { grid-column: 1 / -1; }
   .history-filter { grid-template-columns: 1fr; padding: 14px; }
   .history-list li { grid-template-columns: minmax(0,1fr) auto; gap: 5px 10px; }
-  .history-list li span:not(.history-status), .history-list li time { grid-column: 1 / -1; }
   .history-list .history-status { grid-column: 2; grid-row: 1; }
+  .history-route, .history-breakdown { grid-column: 1 / -1; }
+  .history-time { grid-column: 1; }
+  .history-points { grid-column: 2; }
   .weather-simulator { display: block; }
   .weather-simulator select { width: 100%; }
   .weather-simulator button { margin-top: 12px; }

@@ -9,6 +9,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { WebSocket } = require('ws');
 const { demoDropoffs } = require('../src/modules/demo/demo-fixtures');
+const { distanceMeters } = require('../src/modules/location/location');
+const { distanceBonusPoints } = require('../src/modules/score/score-bonuses');
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const testDatabasePrefix = 'deliveryflow-test-';
@@ -203,10 +205,15 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(typeof offerResult.body.order.store.longitude, 'number');
   assert.equal(typeof offerResult.body.order.dropoffLatitude, 'number');
   assert.equal(typeof offerResult.body.order.dropoffLongitude, 'number');
-  assert.equal(offerResult.body.estimatedPoints, 100);
-  assert.deepEqual(offerResult.body.scoreBreakdown, [
-    { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100 },
-  ]);
+  const pickupToDropoffMeters = distanceMeters(
+    offerResult.body.order.store,
+    { latitude: offerResult.body.order.dropoffLatitude, longitude: offerResult.body.order.dropoffLongitude },
+  );
+  const expectedPoints = 100 + distanceBonusPoints(pickupToDropoffMeters);
+  assert.equal(offerResult.body.estimatedPoints, expectedPoints);
+  assert.equal(offerResult.body.scoreBreakdown[0].code, 'DELIVERY_COMPLETED');
+  assert.equal(offerResult.body.scoreBreakdown.reduce((total, item) => total + item.points, 0), expectedPoints);
+  if (expectedPoints > 100) assert.equal(offerResult.body.scoreBreakdown[1].code, 'DELIVERY_DISTANCE');
 
   const accepted = await authenticatedPost(`/api/offers/${offerResult.body.id}/accept`, 'accept-offer');
   assert.equal(accepted.status, 200);
@@ -222,13 +229,10 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const completed = await authenticatedPost(`/api/assignments/${assignmentId}/complete`, 'complete-order');
   assert.equal(completed.status, 200);
   assert.equal(completed.body.driver.status, 'IDLE');
-  assert.equal(completed.body.driver.score, 100);
+  assert.equal(completed.body.driver.score, expectedPoints);
   assert.equal(completed.body.assignment, null);
-  assert.equal(completed.body.scoreAward.points, 100);
-  assert.equal(completed.body.scoreAward.reason, '配達完了');
-  assert.deepEqual(completed.body.scoreAward.breakdown, [
-    { code: 'DELIVERY_COMPLETED', label: '配達完了', points: 100 },
-  ]);
+  assert.equal(completed.body.scoreAward.points, expectedPoints);
+  assert.deepEqual(completed.body.scoreAward.breakdown, offerResult.body.scoreBreakdown);
 
   const repeatedCompletion = await authenticatedPost(`/api/assignments/${assignmentId}/complete`, 'complete-order');
   assert.equal(repeatedCompletion.status, 200);
@@ -238,11 +242,11 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   assert.equal(score.status, 200);
-  assert.equal(score.body.currentScore, 100);
-  assert.equal(score.body.lifetimeScore, 100);
+  assert.equal(score.body.currentScore, expectedPoints);
+  assert.equal(score.body.lifetimeScore, expectedPoints);
   assert.equal(score.body.windowDays, 14);
   assert.equal(score.body.recentEvents.length, 1);
-  assert.equal(score.body.recentEvents[0].points, 100);
+  assert.equal(score.body.recentEvents[0].points, expectedPoints);
   assert.deepEqual(score.body.recentEvents[0].breakdown, completed.body.scoreAward.breakdown);
   assert.equal(score.body.recentEvents[0].assignment.order.status, 'DELIVERED');
 
@@ -255,6 +259,8 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(history.body.deliveries.length, 1);
   assert.equal(history.body.deliveries[0].order.status, 'DELIVERED');
   assert.notEqual(history.body.deliveries[0].deliveredAt, null);
+  assert.equal(history.body.deliveries[0].scoreEvent.points, expectedPoints);
+  assert.deepEqual(history.body.deliveries[0].scoreEvent.breakdown, offerResult.body.scoreBreakdown);
 
   const historyQuery = offerResult.body.order.store.name;
   const matchingHistory = await request('/api/deliveries/history?status=DELIVERED&query=' + encodeURIComponent(historyQuery) + '&from=2000-01-01&to=2999-12-31', {
@@ -319,13 +325,13 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(ranking.body.limit, 10);
   assert.equal(ranking.body.tiePolicy, 'competition');
   assert.deepEqual(ranking.body.current.leaders.map(({ name, score, rank }) => ({ name, score, rank })), [
-    { name: 'テスト配達員', score: 100, rank: 1 },
+    { name: 'テスト配達員', score: expectedPoints, rank: 1 },
     { name: '履歴分離確認配達員', score: 0, rank: 2 },
     { name: '同点確認配達員', score: 0, rank: 2 },
   ]);
   assert.equal(ranking.body.current.me.rank, 1);
   assert.equal(ranking.body.current.me.isCurrentDriver, true);
-  assert.equal(ranking.body.lifetime.me.score, 100);
+  assert.equal(ranking.body.lifetime.me.score, expectedPoints);
   assert.equal(ranking.body.lifetime.me.lifetimeTitle, 'ルーキー');
   assert.match(ranking.body.month.label, /^\d{4}-\d{2}$/);
   assert.equal(ranking.body.monthly.me.monthlyTitle, '月間チャンピオン');
@@ -841,20 +847,26 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   await post('/api/shifts/start', 'rain-start');
   await updateLocation(token, 34.983, 135.964);
   const offer = await post('/api/offers/current', 'rain-offer');
-  assert.equal(offer.body.estimatedPoints, 130);
+  const distancePoints = distanceBonusPoints(distanceMeters(
+    offer.body.order.store,
+    { latitude: offer.body.order.dropoffLatitude, longitude: offer.body.order.dropoffLongitude },
+  ));
+  const expectedRainPoints = 130 + distancePoints;
+  assert.equal(offer.body.estimatedPoints, expectedRainPoints);
   assert.deepEqual(offer.body.scoreBreakdown.map((item) => item.code), [
     'DELIVERY_COMPLETED',
+    ...(distancePoints ? ['DELIVERY_DISTANCE'] : []),
     'WEATHER_RAIN',
   ]);
 
   const accepted = await post(`/api/offers/${offer.body.id}/accept`, 'rain-accept');
   const assignmentId = accepted.body.assignment.id;
-  assert.equal(accepted.body.assignment.estimatedPoints, 130);
+  assert.equal(accepted.body.assignment.estimatedPoints, expectedRainPoints);
 
   await post('/api/simulator/weather', 'rain-clear-after-accept', { condition: 'CLEAR' });
   await post(`/api/assignments/${assignmentId}/pickup`, 'rain-pickup');
   const completed = await post(`/api/assignments/${assignmentId}/complete`, 'rain-complete');
-  assert.equal(completed.body.scoreAward.points, 130);
+  assert.equal(completed.body.scoreAward.points, expectedRainPoints);
   assert.deepEqual(completed.body.scoreAward.breakdown, offer.body.scoreBreakdown);
 
   const repeated = await post(`/api/assignments/${assignmentId}/complete`, 'rain-complete');
@@ -863,7 +875,7 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   const score = await request('/api/drivers/me/score', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  assert.equal(score.body.lifetimeScore, 130);
+  assert.equal(score.body.lifetimeScore, expectedRainPoints);
   assert.equal(score.body.recentEvents.length, 1);
   assert.deepEqual(score.body.recentEvents[0].breakdown, offer.body.scoreBreakdown);
 });

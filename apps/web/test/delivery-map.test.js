@@ -25,17 +25,16 @@ test('現在地と配達段階に合わせて地図上の直線を切り替え�
   const current = { latitude: 35.012, longitude: 135.765 };
   const beforePickup = routePlan(order, current, false);
   assert.deepEqual(beforePickup.current, [35.012, 135.765]);
-  assert.deepEqual(beforePickup.activePath, [beforePickup.current, beforePickup.pickup]);
-  assert.deepEqual(beforePickup.upcomingPath, [beforePickup.pickup, beforePickup.dropoff]);
-  assert.deepEqual(beforePickup.fallbackPath, []);
+  assert.deepEqual(beforePickup.toPickupPath, [beforePickup.current, beforePickup.pickup]);
+  assert.deepEqual(beforePickup.deliveryPath, [beforePickup.pickup, beforePickup.dropoff]);
 
   const afterPickup = routePlan(order, current, true);
-  assert.deepEqual(afterPickup.activePath, [afterPickup.current, afterPickup.dropoff]);
-  assert.deepEqual(afterPickup.upcomingPath, []);
+  assert.deepEqual(afterPickup.toPickupPath, []);
+  assert.deepEqual(afterPickup.deliveryPath, [afterPickup.pickup, afterPickup.dropoff]);
 
   const withoutLocation = routePlan(order, null, true);
-  assert.deepEqual(withoutLocation.activePath, []);
-  assert.deepEqual(withoutLocation.fallbackPath, [withoutLocation.pickup, withoutLocation.dropoff]);
+  assert.deepEqual(withoutLocation.toPickupPath, []);
+  assert.deepEqual(withoutLocation.deliveryPath, [withoutLocation.pickup, withoutLocation.dropoff]);
 });
 
 test('配達カードは実際の座標・報酬を表示し、注文名をHTMLとして扱わない', () => {

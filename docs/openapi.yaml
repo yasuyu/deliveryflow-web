@@ -116,7 +116,7 @@ paths:
         - { name: from, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の開始日（日本時間） }
         - { name: to, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の終了日（日本時間） }
       responses:
-        '200': { description: 完了件数、最終配達時刻、配達履歴 }
+        '200': { description: 完了件数、最終配達時刻、配達履歴と各配達の加点・内訳 }
         '400': { description: 絞り込み条件が不正 }
         '401': { description: Bearerトークンが不正 }
   /api/drivers/me/score:
@@ -225,7 +225,7 @@ paths:
           schema: { type: integer }
       responses:
         '200':
-          description: 配達完了後のダッシュボード状態と、基本点・雨天・深夜を含む今回の加点内訳
+          description: 配達完了後のダッシュボード状態と、基本点・配達距離・雨天・深夜を含む今回の加点内訳
           content:
             application/json:
               schema:
