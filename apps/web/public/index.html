@@ -69,13 +69,6 @@
     <div id="workflow" class="hidden map-shell">
       <div id="mapStage" class="map-stage">
         <div id="deliveryMap" class="delivery-map" role="region" aria-label="店舗と配達先の地図"></div>
-        <div id="mapConsent" class="map-consent">
-          <svg class="ui-icon" aria-hidden="true"><use href="#icon-pin"/></svg>
-          <h2>配達エリアを地図で確認</h2>
-          <p>OpenStreetMapから地図を読み込みます。表示エリアとIPアドレスが同サービスに伝わります。勤務開始時はデモ位置を使い、端末位置は明示的に切り替えた場合だけ取得します。</p>
-          <button id="enableMap" type="button">実地図を表示する</button>
-          <small>無料・APIキー不要</small>
-        </div>
         <div id="mapTools" class="map-tools hidden">
           <button id="fitMap" type="button" aria-label="受取場所と配達先を地図に収める" title="配達エリアを表示"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fit"/></svg></button>
         </div>
@@ -101,10 +94,10 @@
       <div id="sheetContent" class="sheet-content">
       <section id="deliveryPanel" class="sheet-panel" role="region" aria-label="配達" tabindex="0">
         <section id="idleCard" class="card delivery-empty"><span class="delivery-empty__icon" aria-hidden="true">↗</span><p class="eyebrow">READY FOR DELIVERY</p><h2 id="idleHeading">今日の配達を始めましょう</h2><p id="idleDescription">稼働を開始すると、オファーを確認できます。</p><button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button></section>
-        <section id="deliveryCard" class="card hidden"><p class="eyebrow">CURRENT DELIVERY</p><h2>今回の配達</h2><div id="deliveryDetail"></div></section>
+        <section id="deliveryCard" class="card hidden"><div id="deliveryDetail"></div></section>
       </section>
       <section id="settingsPanel" class="sheet-panel hidden" role="region" aria-label="設定" tabindex="0">
-      <section class="card map-settings"><h2>地図の表示</h2><p>道路と建物はOpenStreetMapの実地図です。表示エリアとIPアドレスが同サービスに伝わります。端末位置へ切り替えた場合は、約100m単位に丸めた現在地周辺の地図タイルを読み込みます。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">実地図を表示する（外部通信）</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
+      <section class="card map-settings"><h2>地図の表示</h2><p>ログイン後、道路と建物をOpenStreetMapから自動で読み込みます。表示エリアとIPアドレスが同サービスに伝わります。端末位置へ切り替えた場合は、約100m単位に丸めた現在地周辺の地図タイルを読み込みます。</p><p>店舗と配達先は学習用の地点で、点線は道路経路ではなく直線です。</p><button id="toggleMap" type="button" class="button-secondary">地図の通信を停止する</button><p>地図データ: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p></section>
       <section class="card location-card">
         <p class="eyebrow">LOCATION · PRIVACY FIRST</p><h2>配達位置と距離</h2>
         <p>勤務開始時は京都市内のデモ位置を使います。実際の現在地は、下のボタンを押してブラウザで許可した場合だけ取得します。</p>
@@ -180,7 +173,11 @@
       </section>
       </div>
       <section id="shiftCard" class="action-dock" aria-label="次の操作">
-        <div class="action-dock__heading"><svg class="ui-icon action-dock__icon" aria-hidden="true"><use id="actionIcon" href="#icon-bike"/></svg><h2 id="actionGuidance">今日の業務</h2><span id="offerDeadline" class="offer-deadline hidden"></span></div>
+        <div class="action-dock__heading"><svg class="ui-icon action-dock__icon" aria-hidden="true"><use id="actionIcon" href="#icon-bike"/></svg><h2 id="actionGuidance">今日の業務</h2></div>
+        <div id="offerCountdown" class="offer-countdown hidden">
+          <div class="offer-countdown__label"><span>受付終了まで</span><strong id="offerDeadline" role="timer">残り 30秒</strong></div>
+          <progress id="offerCountdownProgress" max="30" value="30" aria-label="オファー受付の残り時間"></progress>
+        </div>
         <p id="actionDestination"></p>
         <div id="compactDelivery" class="compact-delivery hidden"></div>
         <section id="offlineQueueStatus" class="offline-queue hidden" aria-live="polite"></section>

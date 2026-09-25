@@ -67,11 +67,11 @@ test('地図通信は有効化後だけ開始し、更新で増殖せず、停�
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/delivery-map.js'), 'utf8'), context);
   const element = () => ({ classList: { add() {}, remove() {}, toggle() {} }, getBoundingClientRect: () => ({ height: canvasHeight }) });
   const controller = context.window.DeliveryFlowMap.create({
-    canvas: element(), consent: element(), tools: element(), note: element(), error: element(), toggle: element(),
+    canvas: element(), tools: element(), note: element(), error: element(), toggle: element(),
   });
   controller.update(order);
   assert.equal(calls.tiles, 0);
-  controller.enable();
+  assert.equal(controller.enable(), true);
   assert.equal(calls.tiles, 1);
   assert.equal(calls.markers.length, 2);
   controller.update({ ...order });

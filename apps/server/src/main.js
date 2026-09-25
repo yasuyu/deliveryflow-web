@@ -82,7 +82,7 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 let realtimeHub;
 const port = positiveIntegerFromEnv('PORT', 3000);
-const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 120) * 1000;
+const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 30) * 1000;
 const offerCandidateLimit = positiveIntegerFromEnv('OFFER_CANDIDATE_LIMIT', 3);
 const simulatedScoreDate = process.env.SCORE_BONUS_SIMULATED_NOW
   ? new Date(process.env.SCORE_BONUS_SIMULATED_NOW)
@@ -537,6 +537,7 @@ async function dashboard(driverId) {
     location: publicLocation(driver),
     offer: offer ? {
       ...offer,
+      acceptanceSeconds: offerTtlMilliseconds / 1000,
       scoreBreakdown: parseBreakdown(offer.scoreBreakdown),
       routeDistance: routeDistance(offer.order, driver),
     } : null,
@@ -904,7 +905,11 @@ async function showCurrentOffer(driver) {
     where: { id: driver.id },
     data: { status: 'OFFERED' },
   });
-  return { ...offer, scoreBreakdown: parseBreakdown(offer.scoreBreakdown) };
+  return {
+    ...offer,
+    acceptanceSeconds: offerTtlMilliseconds / 1000,
+    scoreBreakdown: parseBreakdown(offer.scoreBreakdown),
+  };
 }
 
 async function acceptOffer(driver, offerId) {

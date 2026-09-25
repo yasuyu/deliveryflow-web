@@ -1,13 +1,29 @@
 (function attachDeliveryUi(root) {
   const rendered = new WeakMap();
+  const defaultOfferDurationSeconds = 30;
   function escapeHtml(value) {
     return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
   }
 
+  function offerCountdown(expiresAt, now = Date.now(), durationSeconds = defaultOfferDurationSeconds) {
+    const timestamp = expiresAt ? new Date(expiresAt).getTime() : NaN;
+    if (!Number.isFinite(timestamp)) return null;
+    const duration = Math.max(1, Number(durationSeconds) || defaultOfferDurationSeconds);
+    const remainingMilliseconds = Math.max(0, timestamp - now);
+    const remainingSeconds = Math.ceil(remainingMilliseconds / 1000);
+    return {
+      durationSeconds: duration,
+      remainingSeconds,
+      progressValue: Math.min(duration, remainingSeconds),
+      urgent: remainingMilliseconds > 0 && remainingMilliseconds <= 10_000,
+      expired: remainingMilliseconds <= 0,
+    };
+  }
+
   function getActionView(state, now = Date.now()) {
     const view = { guidance: '今日の配達を始めましょう', destination: '準備ができたら稼働を開始してください。',
-      primary: { label: '稼働を開始する', action: 'start' }, secondary: [], deadline: '', expired: false };
+      primary: { label: '稼働を開始する', action: 'start' }, secondary: [], deadline: '', countdown: null, expired: false };
     if (state.assignment) {
       const { order, id, pickedUpAt } = state.assignment;
       return { ...view,
@@ -20,14 +36,13 @@
       };
     }
     if (state.driver.status === 'OFFERED' && state.offer) {
-      const { id, order, expiresAt } = state.offer;
-      const timestamp = expiresAt ? new Date(expiresAt).getTime() : NaN;
-      const expires = Number.isFinite(timestamp) ? timestamp : null;
-      const expired = expires !== null && Number.isFinite(expires) && expires <= now;
-      const deadline = expires === null ? '期限なし' : expired ? 'オファー期限切れ'
-        : `期限 ${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(expires)}`;
+      const { id, order, expiresAt, acceptanceSeconds } = state.offer;
+      const countdown = offerCountdown(expiresAt, now, acceptanceSeconds);
+      const expired = countdown?.expired || false;
+      const deadline = countdown === null ? '期限なし' : expired ? '受付終了'
+        : `残り ${countdown.remainingSeconds}秒`;
       return { ...view, guidance: expired ? '最新のオファーを確認してください' : 'この配達を引き受けますか？',
-        destination: `${order.store.name} → ${order.dropoffName}`, deadline, expired,
+        destination: `${order.store.name} → ${order.dropoffName}`, deadline, countdown, expired,
         primary: expired ? { label: '最新の状況を確認する', action: 'refresh' }
           : { label: 'この配達を受諾する', action: `accept:${id}` },
         secondary: expired ? [] : [
@@ -99,7 +114,8 @@
   }
 
   const api = {
-    escapeHtml, getActionView, renderActions, updateMarkup, renderCompactOrder, nextRankingPeriod,
+    escapeHtml, getActionView, offerCountdown, renderActions, updateMarkup, renderCompactOrder,
+    nextRankingPeriod,
   };
   root.DeliveryFlowUi = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
-  escapeHtml, getActionView, nextRankingPeriod, renderActions, updateMarkup,
+  escapeHtml, getActionView, nextRankingPeriod, offerCountdown, renderActions, updateMarkup,
 } = require('../public/delivery-ui');
 
 const now = Date.parse('2026-09-21T09:00:00Z');
@@ -11,8 +11,11 @@ const order = {
   dropoffName: '中央マンション',
 };
 
-function offered(expiresAt = '2026-09-21T09:02:00Z') {
-  return { driver: { status: 'OFFERED' }, offer: { id: 'offer-1', order, expiresAt } };
+function offered(expiresAt = '2026-09-21T09:00:30Z') {
+  return {
+    driver: { status: 'OFFERED' },
+    offer: { id: 'offer-1', order, expiresAt, acceptanceSeconds: 30 },
+  };
 }
 
 test('勤務前と待機中は勤務状態に合った操作を表示する', () => {
@@ -32,7 +35,20 @@ test('有効なオファーには受諾・辞退・退勤と行き先を表示�
   assert.deepEqual(view.secondary.map((item) => item.action), ['reject:offer-1', 'end']);
   assert.equal(view.destination, '駅前ストア → 中央マンション');
   assert.equal(view.expired, false);
-  assert.match(view.deadline, /18:02:00/);
+  assert.equal(view.deadline, '残り 30秒');
+  assert.deepEqual(view.countdown, {
+    durationSeconds: 30, remainingSeconds: 30, progressValue: 30, urgent: false, expired: false,
+  });
+});
+
+test('オファーの残り時間を30秒のバーへ変換する', () => {
+  assert.deepEqual(offerCountdown('2026-09-21T09:00:30Z', now + 20_000), {
+    durationSeconds: 30, remainingSeconds: 10, progressValue: 10, urgent: true, expired: false,
+  });
+  assert.deepEqual(offerCountdown('2026-09-21T09:00:30Z', now + 30_000), {
+    durationSeconds: 30, remainingSeconds: 0, progressValue: 0, urgent: false, expired: true,
+  });
+  assert.equal(offerCountdown(null, now), null);
 });
 
 test('オファーの期限ちょうどから受諾を最新状況の確認に置き換える', () => {
@@ -55,6 +71,7 @@ test('期限のないオファーも受諾できる', () => {
     const view = getActionView(offered(expiry), now);
     assert.equal(view.expired, false);
     assert.equal(view.deadline, '期限なし');
+    assert.equal(view.countdown, null);
     assert.equal(view.primary.action, 'accept:offer-1');
   }
   const state = offered();

@@ -200,6 +200,7 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
   assert.equal(offerResult.body.status, 'PENDING');
+  assert.equal(offerResult.body.acceptanceSeconds, 120);
   assert.ok(demoDropoffs.some((dropoff) => dropoff.deliveryFeeYen === offerResult.body.order.deliveryFeeYen));
   assert.equal(typeof offerResult.body.order.store.latitude, 'number');
   assert.equal(typeof offerResult.body.order.store.longitude, 'number');
@@ -548,6 +549,7 @@ test('勤務中だけ現在地を保持して距離を返し、退勤時に消�
 
   const dashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } });
   assert.equal(dashboard.body.location.status, 'AVAILABLE');
+  assert.equal(dashboard.body.offer.acceptanceSeconds, 120);
   assert.equal(typeof dashboard.body.offer.routeDistance.toPickupMeters, 'number');
   assert.equal(typeof dashboard.body.offer.routeDistance.pickupToDropoffMeters, 'number');
   assert.equal(dashboard.body.driver.latitude, undefined);
