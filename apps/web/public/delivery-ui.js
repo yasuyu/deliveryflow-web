@@ -63,6 +63,19 @@
     return view;
   }
 
+  function shouldAutoAdvanceOffer(state, now = Date.now(), options = {}) {
+    const {
+      online = true,
+      loading = false,
+      queuedActions = 0,
+      advancingOfferId = null,
+    } = options;
+    const offerId = state?.offer?.id;
+    if (!online || loading || queuedActions > 0 || !offerId || state?.driver?.status !== 'OFFERED') return false;
+    if (String(offerId) === String(advancingOfferId)) return false;
+    return getActionView(state, now).expired;
+  }
+
   function renderActions(view, { loading = false } = {}) {
     const button = (item, primary = false) => `<button type="button" class="${primary ? 'action-primary' : 'button-secondary'}" data-action="${escapeHtml(item.action)}"${loading ? ' disabled' : ''}>${escapeHtml(item.label)}</button>`;
     return button(view.primary, true) + (view.secondary.length
@@ -115,7 +128,7 @@
 
   const api = {
     escapeHtml, getActionView, offerCountdown, renderActions, updateMarkup, renderCompactOrder,
-    nextRankingPeriod,
+    nextRankingPeriod, shouldAutoAdvanceOffer,
   };
   root.DeliveryFlowUi = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -197,10 +197,19 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   const located = await updateLocation(accessToken);
   assert.equal(located.status, 200);
 
+  await request('/api/dashboard', { headers: { Authorization: `Bearer ${accessToken}` } });
+  const expiringOfferDatabase = new DatabaseSync(databasePath);
+  expiringOfferDatabase.prepare(
+    'UPDATE Offer SET expiresAt = ? WHERE driverId = ? AND status = \'PENDING\'',
+  ).run(Date.now() + 1_000, primaryDriverId);
+  expiringOfferDatabase.close();
+
+  const shownAt = Date.now();
   const offerResult = await authenticatedPost('/api/offers/current', 'show-offer');
   assert.equal(offerResult.status, 200);
   assert.equal(offerResult.body.status, 'PENDING');
   assert.equal(offerResult.body.acceptanceSeconds, 120);
+  assert.ok(Date.parse(offerResult.body.expiresAt) >= shownAt + 119_000);
   assert.ok(demoDropoffs.some((dropoff) => dropoff.deliveryFeeYen === offerResult.body.order.deliveryFeeYen));
   assert.equal(typeof offerResult.body.order.store.latitude, 'number');
   assert.equal(typeof offerResult.body.order.store.longitude, 'number');

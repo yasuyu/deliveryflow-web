@@ -119,6 +119,7 @@ let bottomSheetState = 'collapsed';
 let activeRankingPeriod = 'monthly';
 let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
+let autoAdvancingOfferId = null;
 
 function bottomSheetSnapHeights() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
@@ -948,8 +949,58 @@ async function performRefresh({ preserveMessage = false } = {}) {
     if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing) {
       queueMicrotask(flushOfflineQueue);
     }
+    return true;
   } catch (error) {
     setMessage(`読み込みに失敗しました。${error.message}`, 'error', 'refresh');
+    return false;
+  }
+}
+
+async function autoAdvanceExpiredOffer() {
+  if (!DeliveryFlowUi.shouldAutoAdvanceOffer(state, Date.now(), {
+    online: navigator.onLine,
+    loading: isLoading,
+    queuedActions: offlineQueue.length,
+    advancingOfferId: autoAdvancingOfferId,
+  })) return;
+
+  const expiredOfferId = state.offer.id;
+  autoAdvancingOfferId = expiredOfferId;
+  setLoading(true);
+  setMessage('受付時間が終了しました。次のオファーを探しています。', 'loading');
+  try {
+    const refreshed = await refresh({ preserveMessage: true });
+    if (!refreshed) return;
+    if (state?.driver.status !== 'IDLE') {
+      if (state?.driver.status === 'OFFERED' && state.offer?.id !== expiredOfferId) {
+        setMessage('次のオファーを表示しました。', 'success');
+      } else if (state?.driver.status === 'OFFERED' && state.offer?.id === expiredOfferId) {
+        // The browser timer can reach zero just before the server clock does.
+        // Allow the next one-second tick to confirm expiry again.
+        autoAdvancingOfferId = null;
+        setMessage('受付時間を確認しています。', 'loading');
+      }
+      return;
+    }
+    await request('/api/offers/current');
+    const nextOfferLoaded = await refresh({ preserveMessage: true });
+    if (!nextOfferLoaded) return;
+    setSheetView('delivery');
+    if (state?.driver.status === 'OFFERED' && state.offer?.id !== expiredOfferId) {
+      setMessage('次のオファーを表示しました。30秒以内に確認してください。', 'success');
+    } else {
+      setMessage('配達状況を更新しました。', 'info');
+    }
+  } catch (error) {
+    if (error.status === 404) {
+      setMessage('現在受け取れる次のオファーはありません。しばらくお待ちください。', 'info');
+    } else if (error.network) {
+      setMessage('通信が切れたため自動更新を停止しました。接続後に最新の状況を確認してください。', 'error');
+    } else {
+      setMessage(`次のオファーを表示できませんでした。${error.message}`, 'error');
+    }
+  } finally {
+    setLoading(false);
   }
 }
 
@@ -1284,7 +1335,14 @@ setBottomSheetState(bottomSheetState);
 setRankingPeriod(activeRankingPeriod);
 refresh();
 setInterval(() => {
-  if (state?.offer && !isLoading) renderActionDock();
+  if (!state?.offer || isLoading) return;
+  renderActionDock();
+  if (DeliveryFlowUi.shouldAutoAdvanceOffer(state, Date.now(), {
+    online: navigator.onLine,
+    loading: isLoading,
+    queuedActions: offlineQueue.length,
+    advancingOfferId: autoAdvancingOfferId,
+  })) void autoAdvanceExpiredOffer();
 }, 1000);
 setInterval(() => {
   const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;

@@ -901,14 +901,21 @@ async function showCurrentOffer(driver) {
   });
   if (!offer) throw new ApiError(404, 'OFFER_NOT_FOUND', '現在受け取れるオファーはありません。現在地を更新してお待ちください');
 
-  await prisma.driver.update({
-    where: { id: driver.id },
-    data: { status: 'OFFERED' },
-  });
+  const [shownOffer] = await prisma.$transaction([
+    prisma.offer.update({
+      where: { id: offer.id },
+      data: { expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
+      include: { order: { include: { store: true } } },
+    }),
+    prisma.driver.update({
+      where: { id: driver.id },
+      data: { status: 'OFFERED' },
+    }),
+  ]);
   return {
-    ...offer,
+    ...shownOffer,
     acceptanceSeconds: offerTtlMilliseconds / 1000,
-    scoreBreakdown: parseBreakdown(offer.scoreBreakdown),
+    scoreBreakdown: parseBreakdown(shownOffer.scoreBreakdown),
   };
 }
 

@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
-  escapeHtml, getActionView, nextRankingPeriod, offerCountdown, renderActions, updateMarkup,
+  escapeHtml, getActionView, nextRankingPeriod, offerCountdown, renderActions,
+  shouldAutoAdvanceOffer, updateMarkup,
 } = require('../public/delivery-ui');
 
 const now = Date.parse('2026-09-21T09:00:00Z');
@@ -102,6 +103,19 @@ test('保存中は主操作と副操作をすべて無効にする', () => {
   const view = getActionView(offered(), now);
   assert.equal((renderActions(view, { loading: true }).match(/ disabled/g) || []).length, 3);
   assert.doesNotMatch(renderActions(view), / disabled/);
+});
+
+test('期限切れオファーはオンラインかつ未処理の場合だけ自動で次へ進める', () => {
+  const state = offered();
+  const deadline = Date.parse(state.offer.expiresAt);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline), true);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline - 1), false);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline, { online: false }), false);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline, { loading: true }), false);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline, { queuedActions: 1 }), false);
+  assert.equal(shouldAutoAdvanceOffer(state, deadline, { advancingOfferId: 'offer-1' }), false);
+  state.driver.status = 'IDLE';
+  assert.equal(shouldAutoAdvanceOffer(state, deadline), false);
 });
 
 test('ランキング期間を左右キーと端キーで切り替える', () => {
