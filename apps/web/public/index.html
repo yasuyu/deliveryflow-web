@@ -93,7 +93,18 @@
       </div>
       <div id="sheetContent" class="sheet-content">
       <section id="deliveryPanel" class="sheet-panel" role="region" aria-label="配達" tabindex="0">
-        <section id="idleCard" class="card delivery-empty"><span class="delivery-empty__icon" aria-hidden="true">↗</span><p class="eyebrow">READY FOR DELIVERY</p><h2 id="idleHeading">今日の配達を始めましょう</h2><p id="idleDescription">稼働を開始すると、オファーを確認できます。</p><button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button></section>
+        <section id="idleCard" class="card delivery-empty">
+          <span class="delivery-empty__icon" aria-hidden="true">↗</span>
+          <p class="eyebrow">READY FOR DELIVERY</p>
+          <h2 id="idleHeading">今日の配達を始めましょう</h2>
+          <p id="idleDescription">稼働を開始すると、オファーを確認できます。</p>
+          <section id="lastShiftSummary" class="shift-summary hidden" aria-label="今回の勤務サマリー" aria-live="polite">
+            <p><span>稼働時間</span><strong id="shiftSummaryDuration">0分</strong></p>
+            <p><span>完了した配達</span><strong id="shiftSummaryDeliveries">0件</strong></p>
+            <p><span>獲得ポイント</span><strong id="shiftSummaryPoints">0 pt</strong></p>
+          </section>
+          <button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button>
+        </section>
         <section id="deliveryCard" class="card hidden"><div id="deliveryDetail"></div></section>
       </section>
       <section id="settingsPanel" class="sheet-panel hidden" role="region" aria-label="設定" tabindex="0">

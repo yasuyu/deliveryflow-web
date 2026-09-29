@@ -149,11 +149,19 @@ paths:
   /api/shifts/end:
     post:
       summary: 退勤する IDLEまたはOFFEREDからOFFLINE
-      description: OFFEREDの場合は保留中のOfferをREJECTEDにし、保存中の現在地を削除してから退勤する
+      description: 今回の勤務を集計し、OFFEREDの場合は保留中のOfferをREJECTEDにして、保存中の現在地を削除してから退勤する
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
-        '200': { description: 退勤成功 }
+        '200':
+          description: 退勤成功。配達員情報と今回の勤務サマリーを返す
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shiftSummary]
+                properties:
+                  shiftSummary: { $ref: '#/components/schemas/ShiftSummary' }
         '409': { description: 待機中以外のため退勤不可 }
   /api/offers/current:
     post:
@@ -293,6 +301,15 @@ components:
             longitude: { type: number, example: 135.768 }
         updatedAt: { type: string, format: date-time, nullable: true }
         accuracyMeters: { type: number, nullable: true }
+    ShiftSummary:
+      type: object
+      required: [startedAt, endedAt, durationSeconds, completedDeliveries, pointsEarned]
+      properties:
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        durationSeconds: { type: integer, minimum: 0, example: 5460 }
+        completedDeliveries: { type: integer, minimum: 0, example: 3 }
+        pointsEarned: { type: integer, minimum: 0, example: 390 }
     ScoreSnapshot:
       type: object
       required: [estimatedPoints, scoreBreakdown]

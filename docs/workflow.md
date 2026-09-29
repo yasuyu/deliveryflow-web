@@ -44,7 +44,9 @@ OFFERED（内容確認中）
 | 受諾 | `OFFERED` | `BUSY` | Assignmentを作成し、Orderを`ASSIGNED`へ変更 |
 | 辞退 | `OFFERED` | `IDLE` | Offerを`REJECTED`へ変更し、次の候補を用意 |
 | 配達完了 | `BUSY` | `IDLE` | 完了記録とスコア加算を同じDB処理で確定 |
-| 退勤 | `IDLE` / `OFFERED` | `OFFLINE` | 保留Offerを辞退し、稼働時刻と現在地を削除 |
+| 退勤 | `IDLE` / `OFFERED` | `OFFLINE` | 今回の勤務を集計し、保留Offerを辞退して稼働時刻と現在地を削除 |
+
+退勤APIは、保存済みの勤務開始時刻から退勤時刻までの秒数と、その期間中に完了した配達件数・確定した獲得ポイントを`shiftSummary`として返します。勤務サマリー自体は保存せず、AssignmentとScoreEventの記録から集計します。
 
 ## Orderの状態
 

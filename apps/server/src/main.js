@@ -839,11 +839,20 @@ async function endShift(driver) {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '待機中またはオファー確認中のみ退勤できます');
   }
 
+  const endedAt = new Date();
+  const startedAt = driver.shiftStartedAt || endedAt;
   const pendingOffers = await prisma.offer.findMany({
     where: { driverId: driver.id, status: 'PENDING' },
     select: { orderId: true },
   });
-  await prisma.$transaction([
+  const [completedDeliveries, scoreSummary, , updated] = await prisma.$transaction([
+    prisma.assignment.count({
+      where: { driverId: driver.id, deliveredAt: { gte: startedAt, lte: endedAt } },
+    }),
+    prisma.scoreEvent.aggregate({
+      where: { driverId: driver.id, createdAt: { gte: startedAt, lte: endedAt } },
+      _sum: { points: true },
+    }),
     prisma.offer.updateMany({
       where: { driverId: driver.id, status: 'PENDING' },
       data: { status: 'REJECTED' },
@@ -860,7 +869,16 @@ async function endShift(driver) {
   for (const offer of pendingOffers) {
     await restoreOrderWhenCandidatesAreGone(offer.orderId);
   }
-  return publicDriver(await prisma.driver.findUnique({ where: { id: driver.id } }));
+  return {
+    ...publicDriver(updated),
+    shiftSummary: {
+      startedAt,
+      endedAt,
+      durationSeconds: Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)),
+      completedDeliveries,
+      pointsEarned: scoreSummary._sum.points || 0,
+    },
+  };
 }
 
 async function updateDriverLocation(driver, location) {
