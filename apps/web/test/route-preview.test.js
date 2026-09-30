@@ -42,10 +42,13 @@ test('配達段階に応じてGoogle Mapsの道路経路確認とナビを切り
   assert.match(renderRoutePreview({ ...order, status: 'PICKED_UP' }), /配達先までGoogle Mapsでナビ/);
 });
 
-test('Google Mapsの経路確認URLとナビURLを現在地なしで生成する', () => {
+test('Google Mapsの経路確認URLとナビURLに必要な出発地を指定する', () => {
   const value = buildGoogleMapsDirectionsUrl(
     { latitude: 34.981, longitude: 135.962 },
-    { waypoint: { latitude: 34.98, longitude: 135.96 } },
+    {
+      origin: { latitude: 35.011, longitude: 135.768 },
+      waypoint: { latitude: 34.98, longitude: 135.96 },
+    },
   );
   const url = new URL(value);
   assert.equal(url.origin, 'https://www.google.com');
@@ -54,17 +57,22 @@ test('Google Mapsの経路確認URLとナビURLを現在地なしで生成する
   assert.equal(url.searchParams.get('destination'), '34.981,135.962');
   assert.equal(url.searchParams.get('waypoints'), '34.98,135.96');
   assert.equal(url.searchParams.get('travelmode'), 'bicycling');
-  assert.equal(url.searchParams.get('origin'), null);
+  assert.equal(url.searchParams.get('origin'), '35.011,135.768');
   assert.equal(url.searchParams.get('dir_action'), null);
 
   const navigationUrl = new URL(buildGoogleMapsDirectionsUrl(
     { latitude: 35, longitude: 135 },
-    { navigate: true },
+    { origin: { latitude: 34.99, longitude: 135.75 }, navigate: true },
   ));
+  assert.equal(navigationUrl.searchParams.get('origin'), '34.99,135.75');
   assert.equal(navigationUrl.searchParams.get('dir_action'), 'navigate');
   assert.equal(navigationUrl.searchParams.get('waypoints'), null);
   assert.throws(() => buildGoogleMapsDirectionsUrl(
     { latitude: 91, longitude: 135 },
+  ), /座標が正しくありません/);
+  assert.throws(() => buildGoogleMapsDirectionsUrl(
+    { latitude: 35, longitude: 135 },
+    { origin: { latitude: 35, longitude: 181 } },
   ), /座標が正しくありません/);
 });
 

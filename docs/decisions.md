@@ -139,7 +139,7 @@ Web画面は`apps/web`、APIは`apps/server`へ分けます。HTTPやDBに依存
 
 アプリ内には外部通信しない模式図を残します。実際の道路経路が必要な場合は、利用者がボタンを押し、送信内容を示す確認画面に同意した後だけ、[Google Maps URL](https://developers.google.com/maps/documentation/urls/get-started)を別タブで開きます。オファー確認中は店舗を経由地、配達先を目的地として道路経路を表示し、配達中は進行段階に応じて店舗または配達先へのナビを開きます。地図タイルや経路APIをアプリから自動取得しません。
 
-Google Maps側の現在地を出発点として使い、DeliveryFlowから現在地座標は送信しません。送信するのはポートフォリオ用の店舗・配達先のデモ座標だけです。端末位置は引き続きDeliveryFlow内で約100m単位へ丸め、元の高精度な座標はLocalStorageやDBへ保存しません。
+デモ位置の利用中は京都市役所付近をGoogle Mapsへ明示的な出発地として送り、端末位置の利用中はGoogle Maps側の現在地を出発点として使います。DeliveryFlowから端末の現在地座標は送信しません。受取後は店舗を出発地にします。端末位置は引き続きDeliveryFlow内で約100m単位へ丸め、元の高精度な座標はLocalStorageやDBへ保存しません。
 
 ### 結果
 
