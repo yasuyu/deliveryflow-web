@@ -21,6 +21,17 @@
     };
   }
 
+  function formatShiftDuration(durationSeconds) {
+    const seconds = Math.max(0, Math.floor(Number(durationSeconds) || 0));
+    const totalMinutes = Math.floor(seconds / 60);
+    if (seconds > 0 && totalMinutes === 0) return '1分未満';
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (!hours) return `${minutes}分`;
+    if (!minutes) return `${hours}時間`;
+    return `${hours}時間${minutes}分`;
+  }
+
   function getActionView(state, now = Date.now()) {
     const view = { guidance: '今日の配達を始めましょう', destination: '準備ができたら稼働を開始してください。',
       primary: { label: '稼働を開始する', action: 'start' }, secondary: [], deadline: '', countdown: null, expired: false };
@@ -127,7 +138,7 @@
   }
 
   const api = {
-    escapeHtml, getActionView, offerCountdown, renderActions, updateMarkup, renderCompactOrder,
+    escapeHtml, formatShiftDuration, getActionView, offerCountdown, renderActions, updateMarkup, renderCompactOrder,
     nextRankingPeriod, shouldAutoAdvanceOffer,
   };
   root.DeliveryFlowUi = api;

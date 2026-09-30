@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
-  escapeHtml, getActionView, nextRankingPeriod, offerCountdown, renderActions,
+  escapeHtml, formatShiftDuration, getActionView, nextRankingPeriod, offerCountdown, renderActions,
   shouldAutoAdvanceOffer, updateMarkup,
 } = require('../public/delivery-ui');
 
@@ -18,6 +18,14 @@ function offered(expiresAt = '2026-09-21T09:00:30Z') {
     offer: { id: 'offer-1', order, expiresAt, acceptanceSeconds: 30 },
   };
 }
+
+test('勤務時間を読みやすい時間と分へ変換する', () => {
+  assert.equal(formatShiftDuration(0), '0分');
+  assert.equal(formatShiftDuration(59), '1分未満');
+  assert.equal(formatShiftDuration(60), '1分');
+  assert.equal(formatShiftDuration(3_600), '1時間');
+  assert.equal(formatShiftDuration(5_460), '1時間31分');
+});
 
 test('勤務前と待機中は勤務状態に合った操作を表示する', () => {
   const offline = getActionView({ driver: { status: 'OFFLINE' } }, now);

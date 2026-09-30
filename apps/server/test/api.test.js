@@ -836,9 +836,52 @@ test('待機中はログアウトできず、先に退勤する必要がある',
   const endShift = await post('/api/shifts/end', 'idle-logout-end');
   assert.equal(endShift.status, 200);
   assert.equal(endShift.body.status, 'OFFLINE');
+  assert.equal(endShift.body.shiftSummary.completedDeliveries, 0);
+  assert.equal(endShift.body.shiftSummary.pointsEarned, 0);
 
   const successfulLogout = await post('/api/logout', 'idle-logout-after-end');
   assert.equal(successfulLogout.status, 200);
+});
+
+test('退勤時に今回の勤務時間、配達件数、獲得ポイントを返す', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '勤務サマリー確認', pin: '224466' }),
+  });
+  const token = registration.body.accessToken;
+  const post = (pathname, key) => request(pathname, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': key,
+    },
+  });
+
+  const started = await post('/api/shifts/start', 'summary-start');
+  assert.equal(started.status, 200);
+  await updateLocation(token);
+  const offer = await post('/api/offers/current', 'summary-offer');
+  assert.equal(offer.status, 200);
+  const accepted = await post(`/api/offers/${offer.body.id}/accept`, 'summary-accept');
+  assert.equal(accepted.status, 200);
+  const assignmentId = accepted.body.assignment.id;
+  assert.equal((await post(`/api/assignments/${assignmentId}/pickup`, 'summary-pickup')).status, 200);
+  const completed = await post(`/api/assignments/${assignmentId}/complete`, 'summary-complete');
+  assert.equal(completed.status, 200);
+
+  const ended = await post('/api/shifts/end', 'summary-end');
+  assert.equal(ended.status, 200);
+  assert.equal(ended.body.status, 'OFFLINE');
+  assert.equal(ended.body.shiftSummary.completedDeliveries, 1);
+  assert.equal(ended.body.shiftSummary.pointsEarned, completed.body.scoreAward.points);
+  assert.equal(Number.isInteger(ended.body.shiftSummary.durationSeconds), true);
+  assert.equal(ended.body.shiftSummary.durationSeconds >= 0, true);
+  assert.equal(Date.parse(ended.body.shiftSummary.startedAt) <= Date.parse(ended.body.shiftSummary.endedAt), true);
+
+  const repeated = await post('/api/shifts/end', 'summary-end');
+  assert.equal(repeated.status, 200);
+  assert.deepEqual(repeated.body, ended.body);
 });
 
 test('PINを5回間違えるとログインを一時的に拒否する', async () => {

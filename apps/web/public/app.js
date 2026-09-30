@@ -64,6 +64,10 @@ const offerDeadline = document.querySelector('#offerDeadline');
 const offerCountdownProgress = document.querySelector('#offerCountdownProgress');
 const compactDelivery = document.querySelector('#compactDelivery');
 const offlineQueueStatus = document.querySelector('#offlineQueueStatus');
+const lastShiftSummary = document.querySelector('#lastShiftSummary');
+const shiftSummaryDuration = document.querySelector('#shiftSummaryDuration');
+const shiftSummaryDeliveries = document.querySelector('#shiftSummaryDeliveries');
+const shiftSummaryPoints = document.querySelector('#shiftSummaryPoints');
 const deliveryMap = DeliveryFlowMap.create({
   canvas: document.querySelector('#deliveryMap'),
   tools: document.querySelector('#mapTools'), note: document.querySelector('#mapNote'),
@@ -120,6 +124,7 @@ let activeRankingPeriod = 'monthly';
 let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
 let autoAdvancingOfferId = null;
+let completedShiftSummary = null;
 
 function bottomSheetSnapHeights() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
@@ -819,6 +824,13 @@ function render() {
   document.querySelector('#idleDescription').textContent = state.driver.status === 'OFFLINE'
     ? '準備ができたら、下のボタンから稼働を開始してください。'
     : 'オファーを確認すると、料金・受取場所・届け先がここに表示されます。';
+  const showShiftSummary = state.driver.status === 'OFFLINE' && completedShiftSummary;
+  lastShiftSummary.classList.toggle('hidden', !showShiftSummary);
+  if (showShiftSummary) {
+    shiftSummaryDuration.textContent = DeliveryFlowUi.formatShiftDuration(completedShiftSummary.durationSeconds);
+    shiftSummaryDeliveries.textContent = `${completedShiftSummary.completedDeliveries}件`;
+    shiftSummaryPoints.textContent = `${completedShiftSummary.pointsEarned} pt`;
+  }
   if (!nextDeliveryKey) {
     displayedOrder = null;
     displayedRouteDistance = null;
@@ -912,6 +924,7 @@ async function performRefresh({ preserveMessage = false } = {}) {
       disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
+      completedShiftSummary = null;
       return performRefresh();
     }
     const data = await response.json().catch(() => ({}));
@@ -1034,6 +1047,7 @@ registrationForm.addEventListener('submit', async (event) => {
     const registration = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(registration.message || '配達員を登録できませんでした。');
     driverToken = registration.accessToken;
+    completedShiftSummary = null;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(registration.driver.id));
     connectRealtime();
@@ -1062,6 +1076,7 @@ loginForm.addEventListener('submit', async (event) => {
     const login = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(login.message || 'ログインできませんでした。');
     driverToken = login.accessToken;
+    completedShiftSummary = null;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(login.driver.id));
     connectRealtime();
@@ -1101,16 +1116,21 @@ async function handleAction(event) {
     let actionResult;
     if (action === 'start') {
       await request('/api/shifts/start');
+      completedShiftSummary = null;
       const demoResult = await saveLocation({ source: 'DEMO' });
       currentBrowserLocation = demoResult.coordinates;
     }
-    if (action === 'end') await request('/api/shifts/end');
+    if (action === 'end') {
+      actionResult = await request('/api/shifts/end');
+      completedShiftSummary = actionResult.shiftSummary || null;
+    }
     if (action === 'offer') await request('/api/offers/current');
     if (action === 'logout') {
       await request('/api/logout');
       disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
+      completedShiftSummary = null;
       authView = 'login';
       await refresh();
       return;
@@ -1138,12 +1158,18 @@ async function handleAction(event) {
       }
     }
     await refresh({ preserveMessage: true });
+    if (action === 'end' && completedShiftSummary) {
+      setSheetView('delivery');
+      setBottomSheetState('medium');
+    }
     if (['offer', 'accept', 'pickup', 'complete'].includes(action.split(':')[0])) {
       setSheetView('delivery');
     }
     const awardDetails = actionResult?.scoreAward?.breakdown
       ?.map((item) => `${item.label} +${item.points}`).join(' / ');
-    const completionMessage = action.startsWith('complete:') ? '配達が完了しました。' : `${actionName}が完了しました。`;
+    const completionMessage = action === 'end' && completedShiftSummary
+      ? `退勤しました。配達 ${completedShiftSummary.completedDeliveries}件、${completedShiftSummary.pointsEarned}ポイントを記録しました。`
+      : action.startsWith('complete:') ? '配達が完了しました。' : `${actionName}が完了しました。`;
     setMessage(actionResult?.scoreAward
       ? `${completionMessage}${awardDetails}、合計 +${actionResult.scoreAward.points}ポイント獲得しました。`
       : completionMessage, 'success');

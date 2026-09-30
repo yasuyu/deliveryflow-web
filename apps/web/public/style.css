@@ -120,6 +120,11 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .delivery-empty h2 { margin: 0 0 10px; font-size: 23px; letter-spacing: -.02em; }
 .delivery-empty p { max-width: 510px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
 .delivery-empty button { margin-top: 18px; }
+.delivery-empty .shift-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 510px; margin-top: 20px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.delivery-empty .shift-summary.hidden { display: none; }
+.delivery-empty .shift-summary p { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.shift-summary span, .shift-summary strong { display: block; }
+.delivery-empty .shift-summary strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--ink); font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.35; }
 
 .action-dock { flex: 0 0 auto; width: 100%; margin: 0; padding: 13px 24px max(14px,env(safe-area-inset-bottom)); border: 0; border-top: 1px solid var(--line); background: #fff; box-shadow: 0 -4px 16px rgba(20,43,46,.035); }
 .action-dock__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 12px; }
