@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { buildOsmDirectionsUrl, formatDistance, renderRoutePreview } = require('../public/route-preview');
+const {
+  buildGoogleMapsDirectionsUrl,
+  formatDistance,
+  renderRoutePreview,
+  routeAction,
+} = require('../public/route-preview');
 
 const order = {
   store: { name: 'BKC カフェ' },
@@ -26,29 +31,40 @@ test('現在地がない場合は更新案内を表示する', () => {
   assert.match(html, /未更新/);
   assert.match(html, /現在地を更新/);
   assert.match(html, /route-preview__segment--unavailable/);
-  assert.doesNotMatch(html, /data-route-kind="current-pickup"/);
-  assert.match(html, /data-route-kind="pickup-dropoff"/);
+  assert.match(html, /data-route-kind="offer-preview"/);
 });
 
-test('この画面で現在地を更新した場合だけ現在地からの外部経路ボタンを表示する', () => {
-  const html = renderRoutePreview(order, {}, { canOpenCurrentRoute: true });
-  assert.match(html, /data-route-kind="current-pickup"/);
-  assert.match(html, /OpenStreetMapへ送信/);
+test('配達段階に応じてGoogle Mapsの道路経路確認とナビを切り替える', () => {
+  assert.equal(routeAction('OFFERING').kind, 'offer-preview');
+  assert.equal(routeAction('ASSIGNED').kind, 'pickup-navigation');
+  assert.equal(routeAction('PICKED_UP').kind, 'dropoff-navigation');
+  assert.match(renderRoutePreview({ ...order, status: 'ASSIGNED' }), /店舗までGoogle Mapsでナビ/);
+  assert.match(renderRoutePreview({ ...order, status: 'PICKED_UP' }), /配達先までGoogle Mapsでナビ/);
 });
 
-test('OpenStreetMapの自動車向け経路URLを生成する', () => {
-  const value = buildOsmDirectionsUrl(
-    { latitude: 34.98, longitude: 135.96 },
+test('Google Mapsの経路確認URLとナビURLを現在地なしで生成する', () => {
+  const value = buildGoogleMapsDirectionsUrl(
     { latitude: 34.981, longitude: 135.962 },
+    { waypoint: { latitude: 34.98, longitude: 135.96 } },
   );
   const url = new URL(value);
-  assert.equal(url.origin, 'https://www.openstreetmap.org');
-  assert.equal(url.pathname, '/directions');
-  assert.equal(url.searchParams.get('engine'), 'fossgis_osrm_car');
-  assert.equal(url.searchParams.get('route'), '34.98,135.96;34.981,135.962');
-  assert.throws(() => buildOsmDirectionsUrl(
-    { latitude: 91, longitude: 135 },
+  assert.equal(url.origin, 'https://www.google.com');
+  assert.equal(url.pathname, '/maps/dir/');
+  assert.equal(url.searchParams.get('api'), '1');
+  assert.equal(url.searchParams.get('destination'), '34.981,135.962');
+  assert.equal(url.searchParams.get('waypoints'), '34.98,135.96');
+  assert.equal(url.searchParams.get('travelmode'), 'bicycling');
+  assert.equal(url.searchParams.get('origin'), null);
+  assert.equal(url.searchParams.get('dir_action'), null);
+
+  const navigationUrl = new URL(buildGoogleMapsDirectionsUrl(
     { latitude: 35, longitude: 135 },
+    { navigate: true },
+  ));
+  assert.equal(navigationUrl.searchParams.get('dir_action'), 'navigate');
+  assert.equal(navigationUrl.searchParams.get('waypoints'), null);
+  assert.throws(() => buildGoogleMapsDirectionsUrl(
+    { latitude: 91, longitude: 135 },
   ), /座標が正しくありません/);
 });
 

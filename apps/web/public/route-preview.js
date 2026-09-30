@@ -24,24 +24,49 @@
       && point.longitude >= -180 && point.longitude <= 180;
   }
 
-  function buildOsmDirectionsUrl(from, to) {
-    if (!validCoordinate(from) || !validCoordinate(to)) {
+  function buildGoogleMapsDirectionsUrl(destination, options = {}) {
+    if (!validCoordinate(destination) || (options.waypoint && !validCoordinate(options.waypoint))) {
       throw new TypeError('経路を開くための座標が正しくありません。');
     }
-    const url = new URL('https://www.openstreetmap.org/directions');
-    url.searchParams.set('engine', 'fossgis_osrm_car');
-    url.searchParams.set(
-      'route',
-      `${from.latitude},${from.longitude};${to.latitude},${to.longitude}`,
-    );
+    const url = new URL('https://www.google.com/maps/dir/');
+    url.searchParams.set('api', '1');
+    url.searchParams.set('destination', `${destination.latitude},${destination.longitude}`);
+    url.searchParams.set('travelmode', 'bicycling');
+    if (options.waypoint) {
+      url.searchParams.set('waypoints', `${options.waypoint.latitude},${options.waypoint.longitude}`);
+    }
+    if (options.navigate) url.searchParams.set('dir_action', 'navigate');
     return url.toString();
   }
 
-  function renderRoutePreview(order, routeDistance = {}, options = {}) {
+  function routeAction(status) {
+    if (status === 'PICKED_UP') {
+      return {
+        kind: 'dropoff-navigation',
+        label: '配達先までGoogle Mapsでナビ',
+        description: '配達先のデモ座標をGoogle Mapsへ送信し、Google Maps側の現在地からナビを開きます。',
+      };
+    }
+    if (status === 'ASSIGNED') {
+      return {
+        kind: 'pickup-navigation',
+        label: '店舗までGoogle Mapsでナビ',
+        description: '店舗のデモ座標をGoogle Mapsへ送信し、Google Maps側の現在地からナビを開きます。',
+      };
+    }
+    return {
+      kind: 'offer-preview',
+      label: 'Google Mapsで道路経路を確認',
+      description: '店舗と配達先のデモ座標をGoogle Mapsへ送信し、現在地から店舗を経由して配達先へ向かう道路経路を開きます。',
+    };
+  }
+
+  function renderRoutePreview(order, routeDistance = {}) {
     const locationAvailable = routeDistance.toPickupMeters !== null
       && routeDistance.toPickupMeters !== undefined;
     const unavailableClass = locationAvailable ? '' : ' route-preview__node--unavailable';
     const unavailableSegmentClass = locationAvailable ? '' : ' route-preview__segment--unavailable';
+    const action = routeAction(order.status);
     return `<section class="route-preview" aria-labelledby="routePreviewHeading">
       <div class="route-preview__heading">
         <h3 id="routePreviewHeading">経路プレビュー</h3>
@@ -56,13 +81,20 @@
       </div>
       <p class="route-preview__note">上の図は地点の順番と直線距離を示す模式図です。実際の道路形状や所要時間は表していません。</p>
       <div class="route-preview__external">
-        <h4>実際の道路経路を確認</h4>
-        <p>ボタンを押して確認した場合だけ、経路の座標をOpenStreetMapへ送信して別タブを開きます。</p>
-        ${options.canOpenCurrentRoute ? '<button type="button" data-route-kind="current-pickup">現在地 → 店舗</button>' : '<small>現在地からの経路は、この画面で現在地を更新すると開けます。</small>'}
-        <button type="button" class="button-secondary" data-route-kind="pickup-dropoff">店舗 → 届け先</button>
+        <h4>道路経路とナビ</h4>
+        <p>${action.description}</p>
+        <button type="button" data-route-kind="${action.kind}">${action.label}</button>
+        <small>端末や位置情報の状態によっては、ナビではなく経路プレビューが開きます。</small>
       </div>
     </section>`;
   }
 
-  return { buildOsmDirectionsUrl, escapeHtml, formatDistance, renderRoutePreview, validCoordinate };
+  return {
+    buildGoogleMapsDirectionsUrl,
+    escapeHtml,
+    formatDistance,
+    renderRoutePreview,
+    routeAction,
+    validCoordinate,
+  };
 }));
