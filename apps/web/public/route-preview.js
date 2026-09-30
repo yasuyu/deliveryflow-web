@@ -25,11 +25,16 @@
   }
 
   function buildGoogleMapsDirectionsUrl(destination, options = {}) {
-    if (!validCoordinate(destination) || (options.waypoint && !validCoordinate(options.waypoint))) {
+    if (!validCoordinate(destination)
+      || (options.origin && !validCoordinate(options.origin))
+      || (options.waypoint && !validCoordinate(options.waypoint))) {
       throw new TypeError('経路を開くための座標が正しくありません。');
     }
     const url = new URL('https://www.google.com/maps/dir/');
     url.searchParams.set('api', '1');
+    if (options.origin) {
+      url.searchParams.set('origin', `${options.origin.latitude},${options.origin.longitude}`);
+    }
     url.searchParams.set('destination', `${destination.latitude},${destination.longitude}`);
     url.searchParams.set('travelmode', 'bicycling');
     if (options.waypoint) {
@@ -44,20 +49,20 @@
       return {
         kind: 'dropoff-navigation',
         label: '配達先までGoogle Mapsでナビ',
-        description: '配達先のデモ座標をGoogle Mapsへ送信し、Google Maps側の現在地からナビを開きます。',
+        description: '店舗と配達先のデモ座標をGoogle Mapsへ送信し、店舗から配達先へのナビを開きます。',
       };
     }
     if (status === 'ASSIGNED') {
       return {
         kind: 'pickup-navigation',
         label: '店舗までGoogle Mapsでナビ',
-        description: '店舗のデモ座標をGoogle Mapsへ送信し、Google Maps側の現在地からナビを開きます。',
+        description: 'デモ位置の利用中は京都市役所付近から、端末位置の利用中はGoogle Maps側の現在地から店舗へのナビを開きます。',
       };
     }
     return {
       kind: 'offer-preview',
       label: 'Google Mapsで道路経路を確認',
-      description: '店舗と配達先のデモ座標をGoogle Mapsへ送信し、現在地から店舗を経由して配達先へ向かう道路経路を開きます。',
+      description: 'デモ位置の利用中は京都市役所付近を出発地にし、店舗を経由して配達先へ向かう道路経路を開きます。',
     };
   }
 

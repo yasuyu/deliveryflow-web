@@ -1298,20 +1298,36 @@ detail.addEventListener('click', (event) => {
     longitude: displayedOrder.dropoffLongitude,
   };
   const routeKind = routeButton.dataset.routeKind;
+  const demoOrigin = state.location.source === 'DEMO' ? currentBrowserLocation : undefined;
   const routeOptions = routeKind === 'offer-preview'
-    ? { destination: dropoff, waypoint: store, navigate: false }
-    : { destination: routeKind === 'pickup-navigation' ? store : dropoff, navigate: true };
+    ? { origin: demoOrigin, destination: dropoff, waypoint: store, navigate: false }
+    : routeKind === 'pickup-navigation'
+      ? { origin: demoOrigin, destination: store, navigate: true }
+      : { origin: store, destination: dropoff, navigate: true };
   const dataDescription = routeKind === 'offer-preview'
-    ? 'デモ用の店舗と配達先の座標'
-    : routeKind === 'pickup-navigation' ? 'デモ用の店舗座標' : 'デモ用の配達先座標';
+    ? state.location.source === 'DEMO'
+      ? '京都市役所付近のデモ位置、デモ用の店舗と配達先の座標'
+      : 'デモ用の店舗と配達先の座標'
+    : routeKind === 'pickup-navigation'
+      ? state.location.source === 'DEMO'
+        ? '京都市役所付近のデモ位置とデモ用の店舗座標'
+        : 'デモ用の店舗座標'
+      : 'デモ用の店舗と配達先の座標';
+  const locationNotice = state.location.source === 'DEMO' || routeKind === 'dropoff-navigation'
+    ? ''
+    : '現在地はDeliveryFlowから送信せず、Google Maps側の現在地を使います。';
   const confirmed = window.confirm(
-    `${dataDescription}をGoogle Mapsへ送信し、外部サイトを開きます。現在地はDeliveryFlowから送信しません。よろしいですか？`,
+    `${dataDescription}をGoogle Mapsへ送信し、外部サイトを開きます。${locationNotice}よろしいですか？`,
   );
   if (!confirmed) return;
   try {
     const routeUrl = DeliveryFlowRoutePreview.buildGoogleMapsDirectionsUrl(
       routeOptions.destination,
-      { waypoint: routeOptions.waypoint, navigate: routeOptions.navigate },
+      {
+        origin: routeOptions.origin,
+        waypoint: routeOptions.waypoint,
+        navigate: routeOptions.navigate,
+      },
     );
     window.open(routeUrl, '_blank', 'noopener,noreferrer');
     setMessage(routeOptions.navigate
