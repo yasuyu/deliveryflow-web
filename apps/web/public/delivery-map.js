@@ -14,11 +14,11 @@
     };
   }
 
-  function routePlan(order, currentLocation, pickedUp = false) {
+  function routePlan(order, currentLocation, pickedUp = false, offerPreview = false) {
     const points = orderPoints(order);
     const current = pickedUp ? null : point(currentLocation?.latitude, currentLocation?.longitude);
     const toPickupPath = !pickedUp && current && points.pickup ? [current, points.pickup] : [];
-    const deliveryPath = pickedUp && points.pickup && points.dropoff
+    const deliveryPath = (pickedUp || offerPreview) && points.pickup && points.dropoff
       ? [points.pickup, points.dropoff] : [];
     return { ...points, current, toPickupPath, deliveryPath };
   }
@@ -42,10 +42,15 @@
       if (!map) return;
       const rect = canvas.getBoundingClientRect();
       if (rect.height < 190) return;
-      const plan = routePlan(currentOrder, currentOptions.currentLocation, currentOptions.pickedUp);
+      const plan = routePlan(
+        currentOrder,
+        currentOptions.currentLocation,
+        currentOptions.pickedUp,
+        currentOptions.offerPreview,
+      );
       const points = currentOptions.pickedUp
         ? [plan.pickup, plan.dropoff].filter(Boolean)
-        : [plan.current, plan.pickup].filter(Boolean);
+        : [plan.current, plan.pickup, ...(currentOptions.offerPreview ? [plan.dropoff] : [])].filter(Boolean);
       if (points.length) map.fitBounds(points, { paddingTopLeft: [rect.width > 700 ? 465 : 40, 105], paddingBottomRight: [70, 65], maxZoom: 16, animate: false });
       else map.setView(defaultCenter, 15, { animate: false });
     }
@@ -53,10 +58,10 @@
       currentOrder = order;
       currentOptions = options;
       if (!map) return;
-      const plan = routePlan(order, options.currentLocation, options.pickedUp);
+      const plan = routePlan(order, options.currentLocation, options.pickedUp, options.offerPreview);
       const points = options.pickedUp
         ? { pickup: plan.pickup, dropoff: plan.dropoff }
-        : { pickup: plan.pickup };
+        : { pickup: plan.pickup, ...(options.offerPreview ? { dropoff: plan.dropoff } : {}) };
       const key = JSON.stringify([order?.id, plan, options.toPickupMeters, options.pickupToDropoffMeters]);
       if (key === previousKey) return;
       previousKey = key;
@@ -89,13 +94,17 @@
       if (plan.deliveryPath.length) {
         root.L.polyline(plan.deliveryPath, { color: '#2877c7', weight: 5, dashArray: '8 8', interactive: false }).addTo(markers);
       }
-      const activeDistance = formatDistance(options.pickedUp
-        ? options.pickupToDropoffMeters : options.toPickupMeters);
-      note.textContent = plan.toPickupPath.length
-        ? `灰色の点線: 現在地 → 店舗（直線${activeDistance ? ` ${activeDistance}` : ''}）`
-        : plan.deliveryPath.length
-          ? `青い点線: 店舗 → 配達先（直線${activeDistance ? ` ${activeDistance}` : ''}）`
-          : plan.current ? '青い点: 更新した現在地' : '現在地を更新すると店舗までの直線を表示';
+      const routeNotes = [];
+      const toPickupDistance = formatDistance(options.toPickupMeters);
+      const deliveryDistance = formatDistance(options.pickupToDropoffMeters);
+      if (plan.toPickupPath.length) {
+        routeNotes.push(`灰色の点線: 現在地 → 店舗（直線${toPickupDistance ? ` ${toPickupDistance}` : ''}）`);
+      }
+      if (plan.deliveryPath.length) {
+        routeNotes.push(`青い点線: 店舗 → 配達先（直線${deliveryDistance ? ` ${deliveryDistance}` : ''}）`);
+      }
+      note.textContent = routeNotes.join(' · ')
+        || (plan.current ? '青い点: 更新した現在地' : '現在地を更新すると店舗までの直線を表示');
       note.classList.toggle('hidden', !plan.current && !points.pickup && !points.dropoff);
       overview();
     }

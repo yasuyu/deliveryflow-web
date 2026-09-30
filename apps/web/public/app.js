@@ -882,6 +882,7 @@ function render() {
   deliveryMap.update(displayedOrder, {
     currentLocation: currentBrowserLocation,
     pickedUp: Boolean(state.assignment?.pickedUpAt),
+    offerPreview: Boolean(activeOffer),
     toPickupMeters: displayedRouteDistance?.toPickupMeters,
     pickupToDropoffMeters: displayedRouteDistance?.pickupToDropoffMeters,
   });
