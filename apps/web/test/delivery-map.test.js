@@ -26,9 +26,10 @@ test('現在地と配達段階に合わせて地図上の直線を切り替え�
   const beforePickup = routePlan(order, current, false);
   assert.deepEqual(beforePickup.current, [35.012, 135.765]);
   assert.deepEqual(beforePickup.toPickupPath, [beforePickup.current, beforePickup.pickup]);
-  assert.deepEqual(beforePickup.deliveryPath, [beforePickup.pickup, beforePickup.dropoff]);
+  assert.deepEqual(beforePickup.deliveryPath, []);
 
   const afterPickup = routePlan(order, current, true);
+  assert.equal(afterPickup.current, null);
   assert.deepEqual(afterPickup.toPickupPath, []);
   assert.deepEqual(afterPickup.deliveryPath, [afterPickup.pickup, afterPickup.dropoff]);
 
@@ -47,8 +48,9 @@ test('配達カードは実際の座標・報酬を表示し、注文名をHTML�
   assert.equal(renderCompactOrder(null), '');
 });
 
-test('地図通信は有効化後だけ開始し、更新で増殖せず、停止・再開できる', () => {
-  const calls = { tiles: 0, fits: 0, views: 0, removed: 0, markers: [] };
+test('地図通信は有効化後だけ開始し、進行中の区間だけを描画して停止・再開できる', () => {
+  const calls = { tiles: 0, fits: 0, views: 0, removed: 0, markers: [], paths: [] };
+  const plain = (value) => JSON.parse(JSON.stringify(value));
   let canvasHeight = 500;
   const layer = { on() { return this; }, addTo() { return this; } };
   const map = { attributionControl: { setPrefix() {} }, fitBounds() { calls.fits++; },
@@ -59,7 +61,7 @@ test('地図通信は有効化後だけ開始し、更新で増殖せず、停�
     layerGroup: () => ({ addTo() { return this; }, clearLayers() {} }),
     divIcon: options => options,
     marker(coords) { calls.markers.push(coords); return { bindTooltip: () => layer }; },
-    polyline: () => layer,
+    polyline(coords) { calls.paths.push(coords); return layer; },
   };
   const context = { window: { L, matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ textContent: '' }) },
@@ -69,21 +71,30 @@ test('地図通信は有効化後だけ開始し、更新で増殖せず、停�
   const controller = context.window.DeliveryFlowMap.create({
     canvas: element(), tools: element(), note: element(), error: element(), toggle: element(),
   });
-  controller.update(order);
+  const current = { latitude: 35.012, longitude: 135.765 };
+  const beforePickupOptions = { currentLocation: current, pickedUp: false, toPickupMeters: 850 };
+  controller.update(order, beforePickupOptions);
   assert.equal(calls.tiles, 0);
   assert.equal(controller.enable(), true);
   assert.equal(calls.tiles, 1);
   assert.equal(calls.markers.length, 2);
-  controller.update({ ...order });
+  assert.deepEqual(plain(calls.markers), [[35.012, 135.765], [35.0093, 135.7684]]);
+  assert.deepEqual(plain(calls.paths), [[[35.012, 135.765], [35.0093, 135.7684]]]);
+
+  const afterPickupOptions = { currentLocation: current, pickedUp: true, pickupToDropoffMeters: 1250 };
+  controller.update(order, afterPickupOptions);
+  assert.deepEqual(plain(calls.markers.slice(2)), [[35.0093, 135.7684], [35.003, 135.774]]);
+  assert.deepEqual(plain(calls.paths[1]), [[35.0093, 135.7684], [35.003, 135.774]]);
+  controller.update({ ...order }, afterPickupOptions);
   controller.enable();
   assert.equal(calls.tiles, 1);
-  assert.equal(calls.fits, 1);
+  assert.equal(calls.fits, 2);
   controller.disable();
   assert.equal(controller.isEnabled(), false);
   assert.equal(calls.removed, 1);
   canvasHeight = 100;
   controller.enable();
   assert.equal(calls.tiles, 2);
-  assert.equal(calls.markers.length, 4);
+  assert.equal(calls.markers.length, 6);
   assert.equal(calls.views, 2, '短い地図領域で再開しても初期表示を設定する');
 });
