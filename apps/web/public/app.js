@@ -633,9 +633,7 @@ function showOrder(
     <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">1</span><div><span class="delivery-stop__label">受取場所</span><strong>${escape(order.store.name)}</strong>${order.pickupName === order.store.name ? '' : `<p>${escape(order.pickupName)}</p>`}</div></div>
     <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">2</span><div><span class="delivery-stop__label">届け先</span><strong>${escape(order.dropoffName)}</strong></div></div>
   </section>
-  ${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance, {
-    canOpenCurrentRoute: Boolean(currentBrowserLocation),
-  })}
+  ${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance)}
   <details class="delivery-details">
     <summary>地点・注文の詳細</summary>
     <dl>
@@ -1299,24 +1297,26 @@ detail.addEventListener('click', (event) => {
     latitude: displayedOrder.dropoffLatitude,
     longitude: displayedOrder.dropoffLongitude,
   };
-  const includesCurrentLocation = routeButton.dataset.routeKind === 'current-pickup';
-  const from = includesCurrentLocation ? currentBrowserLocation : store;
-  const to = includesCurrentLocation ? store : dropoff;
-  if (!from) {
-    setMessage('この画面で現在地を更新してから、道路経路を開いてください。', 'error');
-    return;
-  }
-  const dataDescription = includesCurrentLocation
-    ? '現在地と店舗の座標'
-    : 'デモ用の店舗と届け先の座標';
+  const routeKind = routeButton.dataset.routeKind;
+  const routeOptions = routeKind === 'offer-preview'
+    ? { destination: dropoff, waypoint: store, navigate: false }
+    : { destination: routeKind === 'pickup-navigation' ? store : dropoff, navigate: true };
+  const dataDescription = routeKind === 'offer-preview'
+    ? 'デモ用の店舗と配達先の座標'
+    : routeKind === 'pickup-navigation' ? 'デモ用の店舗座標' : 'デモ用の配達先座標';
   const confirmed = window.confirm(
-    `${dataDescription}をOpenStreetMapへ送信し、外部サイトを開きます。よろしいですか？`,
+    `${dataDescription}をGoogle Mapsへ送信し、外部サイトを開きます。現在地はDeliveryFlowから送信しません。よろしいですか？`,
   );
   if (!confirmed) return;
   try {
-    const routeUrl = DeliveryFlowRoutePreview.buildOsmDirectionsUrl(from, to);
+    const routeUrl = DeliveryFlowRoutePreview.buildGoogleMapsDirectionsUrl(
+      routeOptions.destination,
+      { waypoint: routeOptions.waypoint, navigate: routeOptions.navigate },
+    );
     window.open(routeUrl, '_blank', 'noopener,noreferrer');
-    setMessage('OpenStreetMapの道路経路を別タブで開きました。', 'success');
+    setMessage(routeOptions.navigate
+      ? 'Google Mapsのナビを別タブで開きました。'
+      : 'Google Mapsの道路経路を別タブで開きました。', 'success');
   } catch (error) {
     setMessage(error.message, 'error');
   }
