@@ -28,7 +28,22 @@
     return meters < 1000 ? `約${Math.round(meters)}m` : `約${(meters / 1000).toFixed(1)}km`;
   }
 
-  function create({ canvas, consent = null, tools, note, error, toggle }) {
+  function visibleMapLayout(canvasRect = {}, sheetRect = null) {
+    const width = Number(canvasRect.width) || 0;
+    const height = Number(canvasRect.height) || 0;
+    const top = Number.isFinite(canvasRect.top) ? canvasRect.top : 0;
+    const bottom = Number.isFinite(canvasRect.bottom) ? canvasRect.bottom : top + height;
+    const sheetTop = Number(sheetRect?.top);
+    const overlap = width <= 700 && Number.isFinite(sheetTop)
+      ? Math.min(height, Math.max(0, bottom - Math.max(top, sheetTop)))
+      : 0;
+    return {
+      visibleHeight: Math.max(0, height - overlap),
+      paddingBottom: Math.max(65, overlap + 65),
+    };
+  }
+
+  function create({ canvas, sheet = null, consent = null, tools, note, error, toggle }) {
     let map = null;
     let layer = null;
     let markers = null;
@@ -41,7 +56,8 @@
     function overview() {
       if (!map) return;
       const rect = canvas.getBoundingClientRect();
-      if (rect.height < 190) return;
+      const layout = visibleMapLayout(rect, sheet?.getBoundingClientRect());
+      if (layout.visibleHeight < 190) return;
       const plan = routePlan(
         currentOrder,
         currentOptions.currentLocation,
@@ -51,7 +67,7 @@
       const points = currentOptions.pickedUp
         ? [plan.pickup, plan.dropoff].filter(Boolean)
         : [plan.current, plan.pickup, ...(currentOptions.offerPreview ? [plan.dropoff] : [])].filter(Boolean);
-      if (points.length) map.fitBounds(points, { paddingTopLeft: [rect.width > 700 ? 465 : 40, 105], paddingBottomRight: [70, 65], maxZoom: 16, animate: false });
+      if (points.length) map.fitBounds(points, { paddingTopLeft: [rect.width > 700 ? 465 : 40, 105], paddingBottomRight: [70, layout.paddingBottom], maxZoom: 16, animate: false });
       else map.setView(defaultCenter, 15, { animate: false });
     }
     function update(order, options = {}) {
@@ -154,20 +170,21 @@
       error.classList.add('hidden');
       toggle.textContent = '実地図を再開する（外部通信）';
     }
-    // Wait until the sheet settles before requesting tiles for the resized viewport.
-    new ResizeObserver(() => {
+    function scheduleRefit(delay = 180) {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         if (!map || !canvas.getBoundingClientRect().height) return;
         map.invalidateSize({ pan: false });
         if (showOverviewAfterResize) overview();
         showOverviewAfterResize = false;
-      }, 180);
-    }).observe(canvas);
+      }, delay);
+    }
+    // Wait until layout changes settle before requesting tiles or refitting the route.
+    new ResizeObserver(() => scheduleRefit()).observe(canvas);
     return { enable, disable, update, overview, isEnabled: () => Boolean(map),
-      refitAfterResize: () => { showOverviewAfterResize = true; } };
+      refitAfterResize: () => { showOverviewAfterResize = true; scheduleRefit(320); } };
   }
-  const api = { defaultCenter, formatDistance, orderPoints, routePlan, create };
+  const api = { defaultCenter, formatDistance, orderPoints, routePlan, visibleMapLayout, create };
   root.DeliveryFlowMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window === 'undefined' ? globalThis : window));
