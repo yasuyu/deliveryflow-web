@@ -55,8 +55,8 @@
     if (status === 'ASSIGNED') {
       return {
         kind: 'pickup-navigation',
-        label: '店舗までGoogle Mapsでナビ',
-        description: 'デモ位置の利用中は京都市役所付近から、端末位置の利用中はGoogle Maps側の現在地から店舗へのナビを開きます。',
+        label: '店舗までの経路をGoogle Mapsで開く',
+        description: 'デモ位置の利用中は京都市役所付近から、端末位置の利用中はGoogle Maps側の現在地から店舗までの経路を開きます。スマートフォンではGoogle Mapsアプリからナビを開始できます。',
       };
     }
     return {
