@@ -710,6 +710,30 @@ test('実地図ライブラリをローカル配信し、外部画像の許可�
   assert.doesNotMatch(html, /<img[^>]*tile.openstreetmap.org/);
 });
 
+test('ホーム画面追加用のManifestとアプリアイコンを配信する', async () => {
+  const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
+  assert.equal(manifestResponse.status, 200);
+  assert.match(manifestResponse.headers.get('content-type'), /^application\/manifest\+json/);
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.start_url, '/');
+  assert.deepEqual(manifest.icons.map(({ sizes }) => sizes), ['192x192', '512x512']);
+
+  for (const size of [180, 192, 512]) {
+    const iconResponse = await fetch(`${baseUrl}/icons/app-icon-${size}.png`);
+    assert.equal(iconResponse.status, 200);
+    assert.match(iconResponse.headers.get('content-type'), /^image\/png/);
+    const signature = Buffer.from(await iconResponse.arrayBuffer()).subarray(0, 8);
+    assert.deepEqual([...signature], [137, 80, 78, 71, 13, 10, 26, 10]);
+  }
+
+  const homepage = await fetch(baseUrl);
+  const html = await homepage.text();
+  assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest">/);
+  assert.match(html, /<link rel="apple-touch-icon" sizes="180x180" href="\/icons\/app-icon-180\.png">/);
+  assert.match(html, /<meta name="theme-color" content="#337638">/);
+});
+
 test('京都の複数デモ店舗を追加しても既存店舗の座標は変更しない', () => {
   const database = new DatabaseSync(databasePath);
   const old = database.prepare('SELECT * FROM Store WHERE name = ?').get('BKC 既存店舗');

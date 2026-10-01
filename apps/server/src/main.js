@@ -1153,6 +1153,10 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/vendor/leaflet.js') return serveFile(response, require.resolve('leaflet/dist/leaflet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/vendor/leaflet.css') return serveFile(response, require.resolve('leaflet/dist/leaflet.css'), 'text/css; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/style.css') return serveFile(response, path.join(webPublicDirectory, 'style.css'), 'text/css; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/manifest.webmanifest') return serveFile(response, path.join(webPublicDirectory, 'manifest.webmanifest'), 'application/manifest+json; charset=utf-8');
+  if (request.method === 'GET' && /^\/icons\/app-icon-(180|192|512)\.png$/.test(url.pathname)) {
+    return serveFile(response, path.join(webPublicDirectory, url.pathname.slice(1)), 'image/png');
+  }
 
   if (request.method === 'POST' && url.pathname === '/api/drivers') {
     const { name, pin } = await readJsonBody(request);

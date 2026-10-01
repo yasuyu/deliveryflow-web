@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "DeliveryFlow 配達員アプリ",
+  "short_name": "DeliveryFlow",
+  "description": "オファー確認から配達完了までを案内する配達員向けアプリ",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffef8",
+  "theme_color": "#337638",
+  "icons": [
+    {
+      "src": "/icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
