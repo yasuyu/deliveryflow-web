@@ -70,6 +70,7 @@ const shiftSummaryDeliveries = document.querySelector('#shiftSummaryDeliveries')
 const shiftSummaryPoints = document.querySelector('#shiftSummaryPoints');
 const deliveryMap = DeliveryFlowMap.create({
   canvas: document.querySelector('#deliveryMap'),
+  sheet: bottomSheet,
   tools: document.querySelector('#mapTools'), note: document.querySelector('#mapNote'),
   error: document.querySelector('#mapError'), toggle: document.querySelector('#toggleMap'),
 });

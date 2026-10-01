@@ -3,7 +3,12 @@ const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { defaultCenter, orderPoints, routePlan } = require('../public/delivery-map');
+const {
+  defaultCenter,
+  orderPoints,
+  routePlan,
+  visibleMapLayout,
+} = require('../public/delivery-map');
 const { renderCompactOrder } = require('../public/delivery-ui');
 
 const order = {
@@ -40,6 +45,17 @@ test('現在地と配達段階に合わせて地図上の直線を切り替え�
   const withoutLocation = routePlan(order, null, true);
   assert.deepEqual(withoutLocation.toPickupPath, []);
   assert.deepEqual(withoutLocation.deliveryPath, [withoutLocation.pickup, withoutLocation.dropoff]);
+});
+
+test('モバイルではシートの重なりを避けて地図上の地点を収める', () => {
+  assert.deepEqual(
+    visibleMapLayout({ width: 320, height: 568, top: 0, bottom: 568 }, { top: 290 }),
+    { visibleHeight: 290, paddingBottom: 343 },
+  );
+  assert.deepEqual(
+    visibleMapLayout({ width: 1024, height: 768, top: 0, bottom: 768 }, { top: 300 }),
+    { visibleHeight: 768, paddingBottom: 65 },
+  );
 });
 
 test('配達カードは実際の座標・報酬を表示し、注文名をHTMLとして扱わない', () => {
