@@ -369,7 +369,7 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
   .weather-simulator button { margin-top: 12px; }
 }
 
-/* Short viewports keep both the content and every action reachable by scrolling. */
+/* Short viewports keep the action dock visible before shrinking the detail area. */
 @media (max-height: 520px) {
   body:has(#workflow:not(.hidden)) .app-header { display: none; }
   .map-shell { inset: 0; }
@@ -481,7 +481,7 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
   .bottom-sheet { bottom: 6px; max-height: calc(100dvh - 80px); }
   .compact-delivery { margin-block: 8px; }
   .compact-delivery__row { padding-block: 5px; }
-  .action-dock { min-height: 0; flex: 0 1 auto; overflow-y: auto; padding: 4px 16px 12px; }
+  .action-dock { min-height: 0; flex: 0 0 auto; max-height: calc(100dvh - 150px); overflow-y: auto; padding: 4px 16px 12px; }
   .sheet-content { min-height: 44px; }
   .map-tools { bottom: 86px; }
   .map-stage { bottom: calc(var(--visible-sheet-height, 240px) + 6px); }
