@@ -48,8 +48,8 @@
     if (status === 'PICKED_UP') {
       return {
         kind: 'dropoff-navigation',
-        label: '配達先までGoogle Mapsでナビ',
-        description: '店舗と配達先のデモ座標をGoogle Mapsへ送信し、店舗から配達先へのナビを開きます。',
+        label: '配達先までの経路をGoogle Mapsで開く',
+        description: '店舗と配達先のデモ座標をGoogle Mapsへ送信し、店舗から配達先までの経路を開きます。スマートフォンではGoogle Mapsアプリからナビを開始できます。',
       };
     }
     if (status === 'ASSIGNED') {
