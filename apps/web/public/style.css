@@ -436,7 +436,9 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .bottom-sheet__grip { width: 32px; height: 3px; background: #d3d5c9; }
 #bottomSheetHandleLabel { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .sheet-view-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; padding: 4px 18px 12px; border-bottom: 1px solid #e8e9dd; }
-.sheet-view-bar.hidden, .bottom-sheet[data-sheet-state="collapsed"] > .sheet-view-bar { display: none; }
+.sheet-view-bar.hidden,
+.bottom-sheet[data-sheet-state="minimized"] > :not(.bottom-sheet__handle),
+.bottom-sheet[data-sheet-state="collapsed"] > .sheet-view-bar { display: none; }
 .sheet-view-bar__back { min-height: 40px; margin: 0; padding: 7px 10px; border: 1px solid #d8e1d9; border-radius: 9px; background: #f5f7f4; color: var(--brand-dark); font-size: 12px; }
 .sheet-view-bar strong { min-width: 0; color: var(--ink); font-size: 15px; }
 .sheet-panel > .card, .sheet-panel > .learn { padding: 20px; background: #fffef8; }
@@ -488,6 +490,8 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
   .map-shell[data-sheet-state="expanded"] .map-note { display: none; }
 }
 @media (max-width: 700px) {
+  .ride-status { left: var(--visual-viewport-center-x, 50%); width: min(420px, calc(var(--visual-viewport-width, 100vw) - 28px)); }
+  .bottom-sheet { left: var(--visual-viewport-center-x, 50%); width: min(420px, calc(var(--visual-viewport-width, 100vw) - 24px)); }
   .map-tools { bottom: calc(var(--visible-sheet-height, 300px) + max(108px, calc(96px + env(safe-area-inset-bottom)))); }
   .map-note { bottom: calc(var(--visible-sheet-height, 300px) + max(27px, calc(15px + env(safe-area-inset-bottom)))); }
   .map-error { bottom: calc(var(--visible-sheet-height, 300px) + max(34px, calc(22px + env(safe-area-inset-bottom)))); }

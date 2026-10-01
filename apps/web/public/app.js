@@ -127,34 +127,48 @@ let suppressBottomSheetClick = false;
 let autoAdvancingOfferId = null;
 let completedShiftSummary = null;
 
+function syncVisualViewportLayout() {
+  const layout = DeliveryFlowBottomSheet.visualViewportLayout(window.visualViewport, window.innerWidth);
+  workflow.style.setProperty('--visual-viewport-width', `${layout.width}px`);
+  workflow.style.setProperty('--visual-viewport-center-x', `${layout.centerX}px`);
+}
+
 function bottomSheetSnapHeights() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const handleHeight = Math.ceil(bottomSheetHandle.getBoundingClientRect().height + 2);
   return DeliveryFlowBottomSheet.calculateSnapHeights(viewportHeight, {
     mobile: window.matchMedia('(max-width: 700px), (max-height: 520px)').matches,
     minimumContentHeight: Math.ceil(Math.max(shiftCard.scrollHeight + 1, shiftCard.getBoundingClientRect().height)
-      + bottomSheetHandle.getBoundingClientRect().height + 2),
+      + handleHeight),
+    minimumHandleHeight: handleHeight,
   });
 }
 
 function setBottomSheetState(nextState, { announce = false } = {}) {
+  syncVisualViewportLayout();
   const snapHeights = bottomSheetSnapHeights();
   bottomSheetState = nextState;
   bottomSheet.style.setProperty('--sheet-height', `${snapHeights[nextState]}px`);
   bottomSheet.dataset.sheetState = nextState;
   workflow.dataset.sheetState = nextState;
   deliveryMap.refitAfterResize();
-  bottomSheetHandle.setAttribute('aria-expanded', String(nextState !== 'collapsed'));
+  bottomSheetHandle.setAttribute('aria-expanded', String(nextState !== 'minimized'));
   const labels = {
+    minimized: '上にドラッグしてシートを表示',
     collapsed: '上にドラッグして詳細を表示',
     medium: '上下にドラッグして表示範囲を調整',
     expanded: '下にドラッグして地図を広く表示',
   };
   bottomSheetHandleLabel.textContent = labels[nextState];
   bottomSheetHandle.setAttribute('aria-label', `${labels[nextState]}。クリックでも切り替え、上下キーで調整できます`);
-  const focusIsInContent = sheetContent.contains(document.activeElement) || sheetViewBar.contains(document.activeElement);
-  sheetViewBar.inert = nextState === 'collapsed';
-  sheetContent.inert = nextState === 'collapsed';
-  if (announce || (nextState === 'collapsed' && focusIsInContent)) bottomSheetHandle.focus({ preventScroll: true });
+  const contentIsHidden = nextState === 'minimized' || nextState === 'collapsed';
+  const focusIsInContent = sheetContent.contains(document.activeElement)
+    || sheetViewBar.contains(document.activeElement)
+    || shiftCard.contains(document.activeElement);
+  sheetViewBar.inert = contentIsHidden;
+  sheetContent.inert = contentIsHidden;
+  shiftCard.inert = nextState === 'minimized';
+  if (announce || (contentIsHidden && focusIsInContent)) bottomSheetHandle.focus({ preventScroll: true });
 }
 
 function finishBottomSheetDrag(event) {
@@ -194,7 +208,7 @@ bottomSheetHandle.addEventListener('pointermove', (event) => {
   const movement = bottomSheetDrag.startY - event.clientY;
   const height = Math.min(
     snapHeights.expanded,
-    Math.max(snapHeights.collapsed, bottomSheetDrag.startHeight + movement),
+    Math.max(snapHeights.minimized, bottomSheetDrag.startHeight + movement),
   );
   bottomSheetDrag.currentHeight = height;
   bottomSheetDrag.moved ||= Math.abs(movement) > 6;
@@ -209,15 +223,15 @@ bottomSheetHandle.addEventListener('click', () => {
     suppressBottomSheetClick = false;
     return;
   }
-  const nextState = bottomSheetState === 'collapsed' ? 'medium'
-    : bottomSheetState === 'medium' ? 'expanded' : 'collapsed';
+  const currentIndex = DeliveryFlowBottomSheet.states.indexOf(bottomSheetState);
+  const nextState = DeliveryFlowBottomSheet.states[(currentIndex + 1) % DeliveryFlowBottomSheet.states.length];
   setBottomSheetState(nextState, { announce: true });
 });
 
 bottomSheetHandle.addEventListener('keydown', (event) => {
   if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
-  if (event.key === 'Home') setBottomSheetState('collapsed', { announce: true });
+  if (event.key === 'Home') setBottomSheetState('minimized', { announce: true });
   else if (event.key === 'End') setBottomSheetState('expanded', { announce: true });
   else setBottomSheetState(DeliveryFlowBottomSheet.adjacentState(
     bottomSheetState,
@@ -225,8 +239,14 @@ bottomSheetHandle.addEventListener('keydown', (event) => {
   ), { announce: true });
 });
 
-window.addEventListener('resize', () => setBottomSheetState(bottomSheetState));
-window.visualViewport?.addEventListener('resize', () => setBottomSheetState(bottomSheetState));
+function handleViewportResize() {
+  syncVisualViewportLayout();
+  setBottomSheetState(bottomSheetState);
+}
+window.addEventListener('resize', handleViewportResize);
+window.visualViewport?.addEventListener('resize', handleViewportResize);
+window.visualViewport?.addEventListener('scroll', syncVisualViewportLayout);
+syncVisualViewportLayout();
 new ResizeObserver(() => {
   if (!bottomSheetDrag && !workflow.classList.contains('hidden')) setBottomSheetState(bottomSheetState);
 }).observe(shiftCard);
