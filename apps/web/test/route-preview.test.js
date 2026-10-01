@@ -39,7 +39,7 @@ test('配達段階に応じてGoogle Mapsの道路経路確認とナビを切り
   assert.equal(routeAction('ASSIGNED').kind, 'pickup-navigation');
   assert.equal(routeAction('PICKED_UP').kind, 'dropoff-navigation');
   assert.match(renderRoutePreview({ ...order, status: 'ASSIGNED' }), /店舗までの経路をGoogle Mapsで開く/);
-  assert.match(renderRoutePreview({ ...order, status: 'PICKED_UP' }), /配達先までGoogle Mapsでナビ/);
+  assert.match(renderRoutePreview({ ...order, status: 'PICKED_UP' }), /配達先までの経路をGoogle Mapsで開く/);
 });
 
 test('Google Mapsの経路確認URLとナビURLに必要な出発地を指定する', () => {
