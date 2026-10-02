@@ -1,5 +1,7 @@
 node_modules/
 .npm-cache/
+test-results/
+playwright-report/
 generated/
 .git/
 .github/
