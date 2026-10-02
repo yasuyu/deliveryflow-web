@@ -1,4 +1,6 @@
 node_modules/
+test-results/
+playwright-report/
 .npm-cache/
 
 # Keep environment variables and local data out of version control

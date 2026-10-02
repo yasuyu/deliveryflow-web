@@ -146,7 +146,8 @@ deliveryflow-web/
 │  └─ web/
 │     ├─ public/                    HTML、CSS、ブラウザJS
 │     │  └─ route-preview.js        経路模式図の生成
-│     └─ test/                      ブラウザ用ロジックのテスト
+│     ├─ test/                      ブラウザ用ロジックのテスト
+│     └─ e2e/                       Playwrightによる画面操作テスト
 ├─ prisma/                           DB SchemaとMigration
 ├─ docs/
 │  ├─ architecture.md               構成と責務の詳しい説明
@@ -276,10 +277,20 @@ npm test
 
 テストは開発用DBを変更せず、毎回一時SQLite DBを作成します。配達状態、認証、冪等性、履歴、スコア、ランキング、位置情報、WebSocket認証と順序付き通知、オフライン操作の順序と競合停止を確認します。
 
+ブラウザーE2Eは、初回にChromiumを導入してから実行します。
+
+```powershell
+npx playwright install chromium
+npm run test:e2e
+```
+
+デスクトップとスマートフォン幅で、登録から配達完了、加点・履歴の保存、退勤サマリーまで確認します。専用の一時SQLite DBと空きポートのサーバーを自動作成し、終了時に片付けます。外部地図タイルはテスト用画像へ置き換えます。失敗時のスクリーンショットとトレースはGit管理外の`test-results/`へ保存します。
+
 Pull RequestではGitHub Actionsが次を自動確認します。
 
 - Node.js 24での依存関係再現
 - SQLite Migration、構文チェック、全テスト
+- Chromiumでのデスクトップ・スマートフォン幅のE2Eテスト
 - PostgreSQLコンテナのビルド、Migration、APIスモークテスト
 
 ## 困ったとき

@@ -46,6 +46,38 @@ jobs:
       - name: Run API tests
         run: npm test
 
+  browser-e2e:
+    name: Chromium browser E2E
+    needs: sqlite-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser E2E tests
+        run: npm run test:e2e
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-results
+          path: test-results/
+          retention-days: 7
+
   postgresql-smoke-test:
     name: PostgreSQL container smoke test
     needs: sqlite-tests
