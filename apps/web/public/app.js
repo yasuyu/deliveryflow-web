@@ -645,7 +645,7 @@ function showOrder(
   const escape = DeliveryFlowUi.escapeHtml;
   DeliveryFlowUi.updateMarkup(detail, `${deliveryProgressMarkup(order.status)}
   <section class="delivery-summary" aria-label="配達の概要">
-    <p><span>料金</span><strong>${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</strong></p>
+    <p><span>報酬</span><strong>${Number(order.deliveryFeeYen).toLocaleString('ja-JP')}円</strong></p>
     <p><span>店舗まで（直線）</span><strong>${formatCompactDistance(routeDistance.toPickupMeters)}</strong></p>
     <p><span>店舗 → 届け先（直線）</span><strong>${formatCompactDistance(routeDistance.pickupToDropoffMeters)}</strong></p>
     ${estimatedPoints === null ? '' : `<p><span>見込み</span><strong>+${estimatedPoints}pt</strong></p>`}
@@ -842,7 +842,7 @@ function render() {
     ? '今日の配達を始めましょう' : '次のオファーを待っています';
   document.querySelector('#idleDescription').textContent = state.driver.status === 'OFFLINE'
     ? '準備ができたら、下のボタンから稼働を開始してください。'
-    : 'オファーを確認すると、料金・受取場所・届け先がここに表示されます。';
+    : 'オファーを確認すると、報酬・受取場所・届け先がここに表示されます。';
   const showShiftSummary = state.driver.status === 'OFFLINE' && completedShiftSummary;
   lastShiftSummary.classList.toggle('hidden', !showShiftSummary);
   if (showShiftSummary) {
