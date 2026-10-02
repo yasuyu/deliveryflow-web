@@ -6,6 +6,18 @@ DeliveryFlowは、配達員の「勤務開始 → オファー確認 → 受諾 
 
 すべて自分のPC内で無料で動かせます。普段の開発にはSQLite、本番に近い確認にはDocker ComposeとPostgreSQLを使います。
 
+## 設計上の特徴
+
+完成画面では、京都中心部の実地図を全面に表示し、その上にスマートフォン向けの4段階ボトムシートを重ねています。配達員は登録、勤務開始、オファー確認、受諾、荷物受取、配達完了、退勤サマリーまでを1つの画面で試せます。
+
+主な特徴は次の3点です。
+
+- **状態遷移と再送の安全性**: 先着1人だけが受諾できるオファー、`Idempotency-Key`による二重受諾・二重完了・二重加点の防止、通信切断中の操作キューを実装しています。
+- **スマートフォン実機を意識したUI**: OpenStreetMapの地図、最小化できるボトムシート、固定された主要操作、ホーム画面追加用のPWA設定により、配達中の片手操作を想定しています。
+- **ローカルで検証しやすい品質管理**: SQLiteで素早く開発し、Docker ComposeとPostgreSQLで本番に近い確認を行い、OpenAPI、テスト、GitHub Actions CIで振る舞いを確認します。
+
+主な技術は、Node.js、Prisma、SQLite、PostgreSQL、Docker Compose、WebSocket、Leaflet/OpenStreetMap、PWA Manifest、OpenAPI、Node.js標準テストランナーです。
+
 ## できること
 
 - 配達員の登録、6桁PINでのログイン、ログアウト
@@ -145,8 +157,7 @@ deliveryflow-web/
 │  ├─ demo.md                       画面デモの確認手順
 │  ├─ performance.md                負荷試験と性能確認
 │  ├─ openapi.yaml                  APIの契約書
-│  ├─ PROJECT_STATUS.md             実装状況と次の候補
-│  └─ HANDOFF.md                    新しいチャットへの引き継ぎ
+│  └─ PROJECT_STATUS.md             実装状況と次の候補
 └─ scripts/                          負荷試験・DB確認ツール
 ```
 
@@ -298,5 +309,4 @@ SQLiteとPostgreSQLのSchema・Migrationを両方更新し、両方のPrisma Cli
 - [性能確認と負荷試験](docs/performance.md)
 - [API仕様](docs/openapi.yaml)
 - [実装状況とロードマップ](docs/PROJECT_STATUS.md)
-- [新しいチャットへの引き継ぎ](docs/HANDOFF.md)
 
