@@ -66,7 +66,7 @@
       return { ...view, guidance: '新しいオファーを確認しましょう',
         destination: state.location?.status === 'MISSING'
           ? '設定から現在地を更新すると、店舗までの距離を確認できます。'
-          : 'オファーの料金と行き先を確認して、配達を選べます。',
+          : 'オファーの報酬と行き先を確認して、配達を選べます。',
         primary: { label: 'オファーを確認する', action: 'offer' },
         secondary: [{ label: '退勤する', action: 'end' }],
       };

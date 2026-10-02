@@ -23,8 +23,12 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await page.getByRole('button', { name: 'オファーを確認する', exact: true }).click();
   await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
   await page.locator('#bottomSheetHandle').press('ArrowUp');
-  const estimate = page.getByRole('region', { name: '配達の概要' })
-    .locator('p').filter({ hasText: '見込み' }).locator('strong');
+  const summary = page.getByRole('region', { name: '配達の概要' });
+  const reward = summary.locator('p').filter({ has: page.getByText('報酬', { exact: true }) });
+  await expect(reward).toBeVisible();
+  await expect(reward.locator('strong')).toHaveText(/^[\d,]+円$/);
+  await expect(summary.getByText('料金', { exact: true })).toHaveCount(0);
+  const estimate = summary.locator('p').filter({ hasText: '見込み' }).locator('strong');
   await expect(estimate).toHaveText(/\+\d+pt/);
   const points = Number((await estimate.innerText()).match(/\+(\d+)/)[1]);
   expect(points).toBeGreaterThanOrEqual(100);
