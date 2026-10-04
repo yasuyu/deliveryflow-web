@@ -521,7 +521,10 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .elevation-axis { font: 10px sans-serif; fill: #647068; }
 .elevation-line { fill: none; stroke: #327238; stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .elevation-pickup { stroke: #a97825; stroke-dasharray: 4 4; stroke-width: 1; }
-.elevation-distance { display: flex; justify-content: space-between; font-size: 11px; color: #647068; padding: 0 4px; }
+.elevation-distance { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; align-items: start; font-size: 11px; color: #647068; padding: 0 4px; }
+.elevation-stop { display: grid; gap: 1px; }
+.elevation-stop:last-child { text-align: right; }
+.elevation-stop strong { font-size: 11px; color: #46544a; }
 .elevation-legend { color: #a97825; border-left: 1px dashed currentColor; padding-left: 4px; }
 .elevation-extrema { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 0; border-left: 1px solid #dce3dc; padding-left: 10px; }
 .elevation-extrema dt { font-size: 12px; color: #647068; }

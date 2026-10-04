@@ -121,6 +121,11 @@ test('ブラウザー表示は最高・最低を右の専用欄へ出し、不�
   assert.match(html, /class="elevation-extrema".*<dt>最高<\/dt><dd>40.0 m<\/dd>.*<dt>最低<\/dt><dd>10.0 m<\/dd>/);
   assert.match(html, /OpenStreetMap contributors/);
   assert.match(html, /地理院タイルを加工/);
+  assert.match(html, /class="elevation-stop"><strong>現在地<\/strong><span>0 m<\/span>/);
+  assert.match(html, /class="elevation-stop"><strong>配達先<\/strong><span>[\d.]+ km<\/span>/);
+  const afterPickup = renderElevationProfile(createElevationService(data()).profile(order(), {}, true));
+  assert.match(afterPickup, /class="elevation-stop"><strong>店舗<\/strong><span>0 m<\/span>/);
+  assert.doesNotMatch(afterPickup, /現在地/);
   assert.match(renderElevationProfile({ ...profile, maximumMeters: '<script>' }), /取得できません/);
   assert.match(renderElevationProfile({ status: 'UNAVAILABLE', reason: 'OUTSIDE_COVERAGE' }), /対象外/);
   assert.doesNotMatch(renderElevationProfile({ status: 'UNAVAILABLE', reason: '<script>' }), /<script>/);

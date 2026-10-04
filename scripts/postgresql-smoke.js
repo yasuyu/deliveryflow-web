@@ -54,6 +54,9 @@ async function main() {
   const offer = await post('/api/offers/current', 'pg-elevation-offer');
   assert.equal(offer.response.status, 200);
   const offered = await jsonRequest('/api/dashboard', { headers });
+  const expectedAcceptanceSeconds = Number(process.env.EXPECTED_OFFER_TTL_SECONDS || '30');
+  assert.equal(offer.body.acceptanceSeconds, expectedAcceptanceSeconds, 'Offer acceptance period does not match the expected configuration');
+  assert.equal(offered.body.offer.acceptanceSeconds, expectedAcceptanceSeconds);
   assert.equal(offered.body.offer.elevationProfile.status, 'AVAILABLE');
   assert.equal(offered.body.offer.elevationProfile.stage, 'VIA_PICKUP');
   assert.ok(offered.body.offer.elevationProfile.points.length <= 200);
