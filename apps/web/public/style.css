@@ -521,6 +521,7 @@ body:has(#workflow:not(.hidden)) .app-header { display: none; }
 .elevation-axis { font: 10px sans-serif; fill: #647068; }
 .elevation-line { fill: none; stroke: #327238; stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .elevation-pickup { stroke: #a97825; stroke-dasharray: 4 4; stroke-width: 1; }
+.elevation-distance-label { margin: 4px 4px 6px; font-size: 11px; color: #647068; overflow-wrap: anywhere; }
 .elevation-distance { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; align-items: start; font-size: 11px; color: #647068; padding: 0 4px; }
 .elevation-stop { display: grid; gap: 1px; }
 .elevation-stop:last-child { text-align: right; }

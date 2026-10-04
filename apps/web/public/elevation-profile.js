@@ -39,6 +39,7 @@
             ${profile.stage === 'TO_DROPOFF' ? '' : `<path class="elevation-pickup" d="M${pickupX} 14V94" />`}
             <polyline class="elevation-line" points="${line}" />
           </svg>
+          <p class="elevation-distance-label">道路沿いの距離（参考）</p>
           <div class="elevation-distance"><span class="elevation-stop"><strong>${startLabel}</strong><span>0 m</span></span>${profile.stage === 'TO_DROPOFF' ? '<span aria-hidden="true"></span>' : '<span class="elevation-legend">店舗</span>'}<span class="elevation-stop"><strong>配達先</strong><span>${(total / 1000).toFixed(2)} km</span></span></div>
         </div>
         <dl class="elevation-extrema"><div><dt>最高</dt><dd>${formatHeight(max)}</dd></div><div><dt>最低</dt><dd>${formatHeight(min)}</dd></div></dl>
