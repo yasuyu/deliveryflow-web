@@ -8,7 +8,7 @@ DeliveryFlowは、現在は1台のPCで動かす学習用アプリです。構�
 2. 機能を追加するときに、関係するファイルを同じ場所へまとめられること
 3. SQLite版とPostgreSQL版の動作を同じコードで保てること
 
-学習用途に必要な責務だけを配置しています。Redis、道路グラフ、専用シミュレーターなどは、実装すると決まった段階で追加します。
+学習用途に必要な責務だけを配置しています。京都中心部の道路グラフは標高の参考表示に使用します。Redisや専用シミュレーターなどは、実装すると決まった段階で追加します。
 
 ## 全体構成
 
@@ -78,6 +78,9 @@ deliveryflow-web/
 
 - `index.html`: 画面構造
 - `app.js`: ボタン操作、API通信、WebSocketの再接続と画面更新
+- `elevation-profile.js`: 標高折れ線グラフと最高・最低値、対象外・欠損表示
+
+標高計算は`apps/server/src/modules/elevation/elevation.js`へ分離し、同梱する`apps/server/assets/kyoto-elevation.json`の道路グラフを`ngraph.path`のA*で検索します。現在地を外部へ送信せず、DB・配達状態・スコアを変更しません。道路区間の結果は上限256件のメモリーキャッシュに保持します。公開データの明示的な再生成は`scripts/build-elevation-data.js`で行います。
 - `offline-actions.js`: 受諾・受取・完了の端末内キュー、送信先の制限、順序再送と競合停止
 - `route-preview.js`: 外部通信しない経路模式図の生成。Node.jsからも読み込み、表示ロジックをテストする
 - `style.css`: 見た目とレスポンシブ表示

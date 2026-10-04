@@ -632,6 +632,7 @@ function showOrder(
   scoreBreakdown = [],
   routeDistance = {},
   matchedDistanceToPickupMeters = null,
+  elevationProfile = null,
 ) {
   card.classList.remove('hidden');
   displayedOrder = order;
@@ -654,6 +655,7 @@ function showOrder(
     <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">1</span><div><span class="delivery-stop__label">受取場所</span><strong>${escape(order.store.name)}</strong>${order.pickupName === order.store.name ? '' : `<p>${escape(order.pickupName)}</p>`}</div></div>
     <div class="delivery-stop"><span class="delivery-stop__marker" aria-hidden="true">2</span><div><span class="delivery-stop__label">届け先</span><strong>${escape(order.dropoffName)}</strong></div></div>
   </section>
+  ${DeliveryFlowElevation.renderElevationProfile(elevationProfile)}
   ${DeliveryFlowRoutePreview.renderRoutePreview(order, routeDistance)}
   <details class="delivery-details">
     <summary>地点・注文の詳細</summary>
@@ -884,6 +886,7 @@ function render() {
       state.offer.scoreBreakdown,
       state.offer.routeDistance,
       state.offer.distanceToPickupMeters,
+      state.offer.elevationProfile,
     );
   }
   if (state.assignment) {
@@ -895,6 +898,8 @@ function render() {
       state.assignment.estimatedPoints,
       state.assignment.scoreBreakdown,
       state.assignment.routeDistance,
+      null,
+      state.assignment.elevationProfile,
     );
   }
   renderActionDock();

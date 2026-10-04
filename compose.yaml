@@ -35,6 +35,9 @@ services:
         - action: sync+restart
           path: ./apps/server/src
           target: /app/apps/server/src
+        - action: sync+restart
+          path: ./apps/server/assets
+          target: /app/apps/server/assets
         - action: sync
           path: ./apps/web/public
           target: /app/apps/web/public

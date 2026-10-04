@@ -42,6 +42,32 @@ async function main() {
   assert.equal(dashboard.response.status, 200);
   assert.equal(dashboard.body.driver.id, registration.body.driver.id);
 
+  const headers = { Authorization: `Bearer ${registration.body.accessToken}` };
+  const post = (pathname, key) => jsonRequest(pathname, {
+    method: 'POST', headers: { ...headers, 'Idempotency-Key': key },
+  });
+  assert.equal((await post('/api/shifts/start', 'pg-elevation-start')).response.status, 200);
+  assert.equal((await jsonRequest('/api/drivers/me/location', {
+    method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'DEMO' }),
+  })).response.status, 200);
+  const offer = await post('/api/offers/current', 'pg-elevation-offer');
+  assert.equal(offer.response.status, 200);
+  const offered = await jsonRequest('/api/dashboard', { headers });
+  assert.equal(offered.body.offer.elevationProfile.status, 'AVAILABLE');
+  assert.equal(offered.body.offer.elevationProfile.stage, 'VIA_PICKUP');
+  assert.ok(offered.body.offer.elevationProfile.points.length <= 200);
+  const accepted = await post(`/api/offers/${offer.body.id}/accept`, 'pg-elevation-accept');
+  assert.equal(accepted.response.status, 200);
+  const assignmentId = accepted.body.assignment.id;
+  assert.equal((await post(`/api/assignments/${assignmentId}/pickup`, 'pg-elevation-pickup')).response.status, 200);
+  const pickedUp = await jsonRequest('/api/dashboard', { headers });
+  assert.equal(pickedUp.body.assignment.elevationProfile.status, 'AVAILABLE');
+  assert.equal(pickedUp.body.assignment.elevationProfile.stage, 'TO_DROPOFF');
+  assert.equal(pickedUp.body.assignment.estimatedPoints, offer.body.estimatedPoints);
+  assert.equal((await post(`/api/assignments/${assignmentId}/complete`, 'pg-elevation-complete')).response.status, 200);
+  assert.equal((await post('/api/shifts/end', 'pg-elevation-end')).response.status, 200);
+
   const logout = await jsonRequest('/api/logout', {
     method: 'POST',
     headers: {

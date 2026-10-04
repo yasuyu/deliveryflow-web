@@ -661,6 +661,49 @@ test('経路プレビューのブラウザースクリプトを配信する', as
   assert.match(await response.text(), /renderRoutePreview/);
 });
 
+test('標高スクリプトをアプリより先に読み込む', async () => {
+  const response = await fetch(`${baseUrl}/elevation-profile.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^application\/javascript/);
+  assert.match(await response.text(), /renderElevationProfile/);
+  const html = await (await fetch(baseUrl)).text();
+  assert.ok(html.indexOf('src="/elevation-profile.js"') < html.indexOf('src="/app.js"'));
+});
+
+test('ダッシュボードの標高は受取後に切り替わり、端末座標やスコアを変更しない', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '標高確認', pin: '246810' }),
+  });
+  const token = registration.body.accessToken;
+  const headers = { Authorization: `Bearer ${token}` };
+  const post = (pathname) => request(pathname, { method: 'POST', headers: { ...headers, 'Idempotency-Key': randomUUID() } });
+  assert.equal((await post('/api/shifts/start')).status, 200);
+  await updateLocation(token, 35.01123, 135.76824);
+  const offer = await post('/api/offers/current');
+  assert.equal(offer.status, 200);
+  const offered = (await request('/api/dashboard', { headers })).body;
+  assert.equal(offered.offer.elevationProfile.status, 'AVAILABLE');
+  assert.equal(offered.offer.elevationProfile.stage, 'VIA_PICKUP');
+  assert.equal(offered.location.coordinates, null);
+  assert.equal(offered.driver.latitude, undefined);
+  assert.doesNotMatch(JSON.stringify(offered.offer.elevationProfile), /latitude|longitude/);
+  const accepted = await post(`/api/offers/${offer.body.id}/accept`);
+  assert.equal(accepted.status, 200);
+  const id = accepted.body.assignment.id;
+  const beforePickup = (await request('/api/dashboard', { headers })).body.assignment;
+  assert.equal(beforePickup.elevationProfile.stage, 'VIA_PICKUP');
+  assert.equal(beforePickup.estimatedPoints, offer.body.estimatedPoints);
+  assert.equal((await post(`/api/assignments/${id}/pickup`)).status, 200);
+  const pickedUp = (await request('/api/dashboard', { headers })).body.assignment;
+  assert.equal(pickedUp.elevationProfile.status, 'AVAILABLE');
+  assert.equal(pickedUp.elevationProfile.stage, 'TO_DROPOFF');
+  assert.equal(pickedUp.elevationProfile.pickupDistanceMeters, 0);
+  assert.deepEqual(pickedUp.scoreBreakdown, beforePickup.scoreBreakdown);
+  assert.equal((await post(`/api/assignments/${id}/complete`)).status, 200);
+  assert.equal((await post('/api/shifts/end')).status, 200);
+});
+
 test('ボトムシートのブラウザースクリプトを配信する', async () => {
   const response = await fetch(`${baseUrl}/bottom-sheet.js`);
   assert.equal(response.status, 200);

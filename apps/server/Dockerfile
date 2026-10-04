@@ -19,6 +19,7 @@ RUN DATABASE_PROVIDER=postgresql \
     node node_modules/prisma/build/index.js generate
 
 COPY --chown=node:node apps/server/src ./apps/server/src
+COPY --chown=node:node apps/server/assets ./apps/server/assets
 COPY --chown=node:node apps/web/public ./apps/web/public
 COPY --chown=node:node docs ./docs
 COPY --chown=node:node scripts/demo-data.js ./scripts/demo-data.js
