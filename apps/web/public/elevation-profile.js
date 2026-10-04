@@ -27,6 +27,7 @@
     const line = points.map((point) => `${x(point.distanceMeters).toFixed(2)},${y(point.elevationMeters).toFixed(2)}`).join(' ');
     const pickupX = x(profile.pickupDistanceMeters).toFixed(2);
     const stage = profile.stage === 'TO_DROPOFF' ? '店舗 → 配達先' : '現在地 → 店舗 → 配達先';
+    const startLabel = profile.stage === 'TO_DROPOFF' ? '店舗' : '現在地';
     return `<section class="elevation-profile" aria-label="経路の標高">
       <header><h3>経路の標高</h3><span>${stage}</span></header>
       <div class="elevation-layout">
@@ -38,7 +39,7 @@
             ${profile.stage === 'TO_DROPOFF' ? '' : `<path class="elevation-pickup" d="M${pickupX} 14V94" />`}
             <polyline class="elevation-line" points="${line}" />
           </svg>
-          <div class="elevation-distance"><span>0 m</span>${profile.stage === 'TO_DROPOFF' ? '' : '<span class="elevation-legend">店舗</span>'}<span>${(total / 1000).toFixed(2)} km</span></div>
+          <div class="elevation-distance"><span class="elevation-stop"><strong>${startLabel}</strong><span>0 m</span></span>${profile.stage === 'TO_DROPOFF' ? '<span aria-hidden="true"></span>' : '<span class="elevation-legend">店舗</span>'}<span class="elevation-stop"><strong>配達先</strong><span>${(total / 1000).toFixed(2)} km</span></span></div>
         </div>
         <dl class="elevation-extrema"><div><dt>最高</dt><dd>${formatHeight(max)}</dd></div><div><dt>最低</dt><dd>${formatHeight(min)}</dd></div></dl>
       </div>

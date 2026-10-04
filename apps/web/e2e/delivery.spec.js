@@ -22,6 +22,8 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'IDLE');
   await page.getByRole('button', { name: 'オファーを確認する', exact: true }).click();
   await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
+  await expect(page.locator('#offerDeadline')).toHaveText(/残り\s*(?:[12]?\d|30)秒/);
+  await expect(page.locator('#offerCountdownProgress')).toHaveAttribute('max', '30');
   await page.locator('#bottomSheetHandle').press('ArrowUp');
   const summary = page.getByRole('region', { name: '配達の概要' });
   const reward = summary.locator('p').filter({ has: page.getByText('報酬', { exact: true }) });
@@ -39,6 +41,8 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(elevation.locator('.elevation-line')).toHaveCount(1);
   await expect(elevation.locator('header')).toContainText('現在地 → 店舗 → 配達先');
   await expect(elevation.locator('.elevation-extrema dd')).toHaveCount(2);
+  await expect(elevation.locator('.elevation-stop').first()).toHaveText('現在地0 m');
+  await expect(elevation.locator('.elevation-stop').last()).toContainText('配達先');
   const graphBox = await elevation.locator('.elevation-chart').boundingBox();
   const valuesBox = await elevation.locator('.elevation-extrema').boundingBox();
   expect(valuesBox.x).toBeGreaterThanOrEqual(graphBox.x + graphBox.width);
@@ -53,6 +57,10 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   const narrowValues = await elevation.locator('.elevation-extrema').boundingBox();
   expect(narrowValues.x).toBeGreaterThanOrEqual(narrowGraph.x + narrowGraph.width);
   expect(narrowValues.x + narrowValues.width).toBeLessThanOrEqual(320);
+  const startStop = await elevation.locator('.elevation-stop').first().boundingBox();
+  const endStop = await elevation.locator('.elevation-stop').last().boundingBox();
+  expect(startStop.x + startStop.width).toBeLessThanOrEqual(endStop.x);
+  expect(endStop.x + endStop.width).toBeLessThanOrEqual(narrowGraph.x + narrowGraph.width);
   await page.screenshot({ path: testInfo.outputPath('elevation-profile-narrow.png') });
   await page.setViewportSize(viewport);
 
@@ -68,6 +76,7 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(details).toHaveAttribute('open', '');
   await expect(elevation.locator('header')).toContainText('店舗 → 配達先');
   await expect(elevation.locator('.elevation-pickup')).toHaveCount(0);
+  await expect(elevation.locator('.elevation-stop').first()).toHaveText('店舗0 m');
   await page.getByRole('button', { name: '配達完了しました', exact: true }).click();
   await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'IDLE');
   await expect(page.locator('#mapLifetimeScore')).toHaveText(String(points));
