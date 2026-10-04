@@ -60,15 +60,28 @@ async function main() {
   assert.equal(offered.body.offer.elevationProfile.status, 'AVAILABLE');
   assert.equal(offered.body.offer.elevationProfile.stage, 'VIA_PICKUP');
   assert.ok(offered.body.offer.elevationProfile.points.length <= 200);
-  const accepted = await post(`/api/offers/${offer.body.id}/accept`, 'pg-elevation-accept');
+  const acceptResponses = await Promise.all([
+    post(`/api/offers/${offer.body.id}/accept`, 'pg-elevation-accept'),
+    post(`/api/offers/${offer.body.id}/accept`, 'pg-elevation-accept'),
+  ]);
+  const accepted = acceptResponses[0];
   assert.equal(accepted.response.status, 200);
+  assert.equal(acceptResponses[1].response.status, 200);
+  assert.deepEqual(accepted.body, acceptResponses[1].body);
   const assignmentId = accepted.body.assignment.id;
   assert.equal((await post(`/api/assignments/${assignmentId}/pickup`, 'pg-elevation-pickup')).response.status, 200);
   const pickedUp = await jsonRequest('/api/dashboard', { headers });
   assert.equal(pickedUp.body.assignment.elevationProfile.status, 'AVAILABLE');
   assert.equal(pickedUp.body.assignment.elevationProfile.stage, 'TO_DROPOFF');
   assert.equal(pickedUp.body.assignment.estimatedPoints, offer.body.estimatedPoints);
-  assert.equal((await post(`/api/assignments/${assignmentId}/complete`, 'pg-elevation-complete')).response.status, 200);
+  const completeResponses = await Promise.all([
+    post(`/api/assignments/${assignmentId}/complete`, 'pg-elevation-complete'),
+    post(`/api/assignments/${assignmentId}/complete`, 'pg-elevation-complete'),
+  ]);
+  assert.equal(completeResponses[0].response.status, 200);
+  assert.equal(completeResponses[1].response.status, 200);
+  assert.deepEqual(completeResponses[0].body, completeResponses[1].body);
+  assert.equal(completeResponses[0].body.driver.score, offer.body.estimatedPoints);
   const completedIds = [assignmentId];
   for (let i = 0; i < 20; i += 1) {
     const nextOffer = await post('/api/offers/current', `pg-history-offer-${i}`);
@@ -110,6 +123,39 @@ async function main() {
   });
   assert.equal(login.response.status, 200);
   assert.notEqual(login.body.accessToken, registration.body.accessToken);
+
+  for (const alternative of ['end', 'reject']) {
+    const raceDriver = await jsonRequest('/api/drivers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'CI PostgreSQL同時操作確認', pin: '246810' }),
+    });
+    assert.equal(raceDriver.response.status, 201);
+    const raceHeaders = { Authorization: `Bearer ${raceDriver.body.accessToken}` };
+    const racePost = (pathname, key) => jsonRequest(pathname, {
+      method: 'POST', headers: { ...raceHeaders, 'Idempotency-Key': `pg-race-${alternative}-${key}` },
+    });
+    assert.equal((await racePost('/api/shifts/start', 'start')).response.status, 200);
+    assert.equal((await jsonRequest('/api/drivers/me/location', {
+      method: 'PUT', headers: { ...raceHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'DEMO' }),
+    })).response.status, 200);
+    const raceOffer = await racePost('/api/offers/current', 'offer');
+    assert.equal(raceOffer.response.status, 200);
+    const results = await Promise.all([
+      racePost(`/api/offers/${raceOffer.body.id}/accept`, 'accept'),
+      racePost(alternative === 'end' ? '/api/shifts/end' : `/api/offers/${raceOffer.body.id}/reject`, 'alternative'),
+    ]);
+    assert.deepEqual(results.map((result) => result.response.status).sort(), [200, 409]);
+    const latest = await jsonRequest('/api/dashboard', { headers: raceHeaders });
+    assert.equal(latest.response.status, 200);
+    if (latest.body.assignment) {
+      assert.equal(latest.body.driver.status, 'BUSY');
+      const id = latest.body.assignment.id;
+      assert.equal((await racePost(`/api/assignments/${id}/pickup`, 'pickup')).response.status, 200);
+      assert.equal((await racePost(`/api/assignments/${id}/complete`, 'complete')).response.status, 200);
+    }
+    if (latest.body.driver.status !== 'OFFLINE') assert.equal((await racePost('/api/shifts/end', 'end')).response.status, 200);
+  }
 
   console.log('PostgreSQL smoke test passed');
 }

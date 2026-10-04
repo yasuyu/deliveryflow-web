@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: DeliveryFlow API
   version: 0.12.0
-  description: 配達員の稼働と配達ライフサイクルを扱う学習用API
+  description: 配達員の稼働と配達ライフサイクルを扱う学習用API。勤務・配達の状態確認と更新は直列化可能なDBトランザクションで実行し、同時操作でも矛盾した状態を保存しない。
 x-websocket:
   endpoint: /api/realtime
   subprotocol: deliveryflow.realtime.v1
@@ -197,7 +197,7 @@ paths:
                 required: [shiftSummary]
                 properties:
                   shiftSummary: { $ref: '#/components/schemas/ShiftSummary' }
-        '409': { description: 待機中以外のため退勤不可 }
+        '409': { description: 配達中・退勤中、または同時操作で状態が変わったため退勤不可 }
   /api/offers/current:
     post:
       summary: 現在のオファーを確認する IDLE to OFFERED
@@ -290,7 +290,12 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: 通信を再送しても同じ処理を二重実行しないための、操作ごとに一意なキー
+      description: >-
+        操作ごとに一意なキー。状態変更と応答を同じDBトランザクションで保存し、再送には保存した応答を返す。
+        処理途中で停止した場合は全体をロールバックする。同じキーの同時送信も二重実行しない。
+        DB競合の再試行上限に達した場合は409 CONCURRENT_OPERATION_RETRYを返す。最新状態を確認し同じキーで再送する。
+        旧版の未完了記録では、本人の受諾・受取・完了結果が確認できれば現在のダッシュボードと保存済み加点結果で復旧する。
+        未実行の配達操作は通常の状態・期限チェック後に実行する。その他の旧未完了記録は409 IDEMPOTENCY_RECOVERY_REQUIREDを返し、新しい操作としての確認を求める。
       schema:
         type: string
         example: 550e8400-e29b-41d4-a716-446655440000
