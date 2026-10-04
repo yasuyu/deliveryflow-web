@@ -186,8 +186,10 @@
           <label>終了日<input name="to" type="date"></label>
           <div class="history-filter__actions"><button type="submit">絞り込む</button><button type="button" id="historyFilterReset" class="button-secondary">リセット</button></div>
         </form>
-        <p id="historyResultCount" class="history-result-count">表示結果 0件</p>
+        <p id="historyResultCount" class="history-result-count" role="status" tabindex="-1">表示結果 0件</p>
         <ol id="deliveryHistory" class="history-list"></ol>
+        <button type="button" id="historyLoadMore" class="button-secondary hidden">さらに読み込む</button>
+        <p id="historyLoadError" class="history-load-error hidden" role="alert"></p>
       </section>
       </section>
       </div>

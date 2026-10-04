@@ -132,15 +132,33 @@ paths:
         '401': { description: Bearerトークンが不正 }
   /api/deliveries/history:
     get:
-      summary: ログイン中の配達員の完了実績を新しい順に最大20件取得する
+      summary: ログイン中の配達員の配達実績と加点内訳を新しい順に20件ずつ取得する
+      description: 発生日時の降順、同時刻は配達実績IDの降順。pagination.nextCursorを同じ絞り込み条件のcursorへ指定して続きの履歴を取得する。集計件数はページにかかわらず条件に一致する全件を対象とする。
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [ALL, ASSIGNED, PICKED_UP, DELIVERED], default: DELIVERED }, description: 配送状態 }
         - { name: query, in: query, schema: { type: string, maxLength: 100 }, description: 店舗・受取先・配送先の部分一致検索 }
         - { name: from, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の開始日（日本時間） }
         - { name: to, in: query, schema: { type: string, format: date }, description: 状態が発生した日付の終了日（日本時間） }
+        - { name: cursor, in: query, schema: { type: string, pattern: '^[1-9]\d{0,15}$' }, description: 前ページのpagination.nextCursor。現在の配達員と絞り込み条件に一致する配達実績ID。省略時は最新のページ。 }
       responses:
-        '200': { description: 完了件数、最終配達時刻、配達履歴と各配達の加点・内訳 }
-        '400': { description: 絞り込み条件が不正 }
+        '200':
+          description: 完了件数、最終配達時刻、配達履歴と各配達の加点・内訳
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary: { type: object, description: 全完了件数と条件に一致する全件数 }
+                  filters: { type: object, description: 適用された絞り込み条件 }
+                  deliveries: { type: array, maxItems: 20, items: { type: object } }
+                  pagination:
+                    type: object
+                    required: [pageSize, hasMore, nextCursor]
+                    properties:
+                      pageSize: { type: integer, enum: [20] }
+                      hasMore: { type: boolean }
+                      nextCursor: { type: string, nullable: true, description: 続きがない場合はnull }
+        '400': { description: 絞り込み条件またはcursorが不正 }
         '401': { description: Bearerトークンが不正 }
   /api/drivers/me/score:
     get:

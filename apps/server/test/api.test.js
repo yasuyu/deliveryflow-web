@@ -509,6 +509,66 @@ test('配達履歴を配送状態で絞り込める', async () => {
   assert.deepEqual(delivered.body.deliveries, []);
 });
 
+test('履歴を20件ずつ同時刻でも重複なく取得し、絞り込みと配達員の範囲を守る', async () => {
+  const registration = await request('/api/drivers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '追加履歴確認', pin: '135790' }),
+  });
+  const driverId = registration.body.driver.id;
+  const headers = { Authorization: `Bearer ${registration.body.accessToken}` };
+  const database = new DatabaseSync(databasePath);
+  const occurredAt = new Date('2026-09-01T12:00:00+09:00').getTime();
+  const ids = [];
+  const insert = (name, time = occurredAt) => {
+    const order = database.prepare('INSERT INTO "Order" ("storeId", "pickupName", "dropoffName", "status") VALUES (1, ?, ?, \'DELIVERED\')').run('履歴受取', name);
+    const assignment = database.prepare('INSERT INTO "Assignment" ("orderId", "driverId", "acceptedAt", "pickedUpAt", "deliveredAt") VALUES (?, ?, ?, ?, ?)').run(order.lastInsertRowid, driverId, time, time, time);
+    database.prepare('INSERT INTO "ScoreEvent" ("driverId", "assignmentId", "points", "reason", "breakdown", "createdAt") VALUES (?, ?, 100, \'履歴確認\', ?, ?)').run(driverId, assignment.lastInsertRowid, JSON.stringify([{ label: '基本点', points: 100 }]), time);
+    return Number(assignment.lastInsertRowid);
+  };
+  try {
+    for (let i = 0; i < 45; i += 1) ids.push(insert(i < 21 ? `絞り込み対象${i < 20 ? '20件限定' : ''}${i}` : `履歴配送${i}`));
+    const first = await request('/api/deliveries/history', { headers });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.summary.filteredDeliveries, 45);
+    assert.deepEqual(first.body.deliveries.map((item) => item.id), ids.slice(-20).reverse());
+    assert.equal(first.body.pagination.pageSize, 20);
+    assert.equal(first.body.pagination.hasMore, true);
+    insert('新着配送', occurredAt + 1000);
+    const second = await request(`/api/deliveries/history?cursor=${first.body.pagination.nextCursor}`, { headers });
+    const third = await request(`/api/deliveries/history?cursor=${second.body.pagination.nextCursor}`, { headers });
+    assert.equal(second.body.summary.filteredDeliveries, 46);
+    assert.equal(second.body.deliveries.length, 20);
+    assert.equal(third.body.deliveries.length, 5);
+    assert.deepEqual(third.body.pagination, { pageSize: 20, hasMore: false, nextCursor: null });
+    const all = [...first.body.deliveries, ...second.body.deliveries, ...third.body.deliveries];
+    assert.deepEqual(all.map((item) => item.id), [...ids].reverse());
+    assert.ok(all.every((item) => item.scoreEvent.points === 100 && item.scoreEvent.breakdown[0].label === '基本点'));
+    const filters = new URLSearchParams({ query: '絞り込み対象', from: '2026-09-01', to: '2026-09-01' });
+    const filtered = await request(`/api/deliveries/history?${filters}`, { headers });
+    assert.equal(filtered.body.summary.filteredDeliveries, 21);
+    filters.set('cursor', filtered.body.pagination.nextCursor);
+    const filteredNext = await request(`/api/deliveries/history?${filters}`, { headers });
+    assert.equal(filteredNext.body.deliveries.length, 1);
+    assert.equal(filteredNext.body.pagination.hasMore, false);
+    const exactPage = await request('/api/deliveries/history?query=20件限定', { headers });
+    assert.equal(exactPage.body.deliveries.length, 20);
+    assert.deepEqual(exactPage.body.pagination, { pageSize: 20, hasMore: false, nextCursor: null });
+    const allStatuses = await request('/api/deliveries/history?status=ALL', { headers });
+    assert.equal(allStatuses.body.pagination.hasMore, true);
+    for (const cursor of ['', '0', '-1', '1.5', 'abc', '999999999999999999999', '999999999']) {
+      assert.equal((await request(`/api/deliveries/history?cursor=${cursor}`, { headers })).status, 400);
+    }
+    assert.equal((await request(`/api/deliveries/history?cursor=${first.body.pagination.nextCursor}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })).status, 400);
+    assert.equal((await request(`/api/deliveries/history?query=該当なし&cursor=${first.body.pagination.nextCursor}`, { headers })).status, 400);
+    const empty = await request('/api/deliveries/history?from=2026-09-02', { headers });
+    assert.deepEqual(empty.body.pagination, { pageSize: 20, hasMore: false, nextCursor: null });
+  } finally {
+    database.close();
+  }
+});
+
 test('勤務中だけ現在地を保持して距離を返し、退勤時に消去する', async () => {
   const registration = await request('/api/drivers', {
     method: 'POST',

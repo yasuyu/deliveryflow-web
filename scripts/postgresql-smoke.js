@@ -69,6 +69,29 @@ async function main() {
   assert.equal(pickedUp.body.assignment.elevationProfile.stage, 'TO_DROPOFF');
   assert.equal(pickedUp.body.assignment.estimatedPoints, offer.body.estimatedPoints);
   assert.equal((await post(`/api/assignments/${assignmentId}/complete`, 'pg-elevation-complete')).response.status, 200);
+  const completedIds = [assignmentId];
+  for (let i = 0; i < 20; i += 1) {
+    const nextOffer = await post('/api/offers/current', `pg-history-offer-${i}`);
+    assert.equal(nextOffer.response.status, 200);
+    const nextAccepted = await post(`/api/offers/${nextOffer.body.id}/accept`, `pg-history-accept-${i}`);
+    assert.equal(nextAccepted.response.status, 200);
+    const id = nextAccepted.body.assignment.id;
+    assert.equal((await post(`/api/assignments/${id}/pickup`, `pg-history-pickup-${i}`)).response.status, 200);
+    assert.equal((await post(`/api/assignments/${id}/complete`, `pg-history-complete-${i}`)).response.status, 200);
+    completedIds.push(id);
+  }
+  const history = await jsonRequest('/api/deliveries/history', { headers });
+  assert.equal(history.response.status, 200);
+  assert.equal(history.body.summary.filteredDeliveries, 21);
+  assert.equal(history.body.deliveries.length, 20);
+  assert.equal(history.body.pagination.hasMore, true);
+  const older = await jsonRequest(`/api/deliveries/history?cursor=${history.body.pagination.nextCursor}`, { headers });
+  assert.equal(older.response.status, 200);
+  assert.equal(older.body.deliveries.length, 1);
+  assert.deepEqual(older.body.pagination, { pageSize: 20, hasMore: false, nextCursor: null });
+  assert.deepEqual([...history.body.deliveries, ...older.body.deliveries].map((item) => item.id), [...completedIds].reverse());
+  assert.equal(older.body.deliveries[0].scoreEvent.points, offer.body.estimatedPoints);
+  assert.deepEqual(older.body.deliveries[0].scoreEvent.breakdown, offer.body.scoreBreakdown);
   assert.equal((await post('/api/shifts/end', 'pg-elevation-end')).response.status, 200);
 
   const logout = await jsonRequest('/api/logout', {
