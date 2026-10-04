@@ -89,6 +89,7 @@ async function main() {
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
       DEMO_RANKING_SEED: 'false',
       E2E_BASE_URL: `http://127.0.0.1:${port}`,
+      E2E_DATABASE_PATH: path.join(directory, 'delivery.db'),
     };
     const prismaCli = path.join(projectRoot, 'node_modules/prisma/build/index.js');
     const clientExists = await fs.access(path.join(projectRoot, 'generated/client-v2/index.js'))

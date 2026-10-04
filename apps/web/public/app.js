@@ -24,6 +24,8 @@ const deliveryHistoryList = document.querySelector('#deliveryHistory');
 const historyFilterForm = document.querySelector('#historyFilterForm');
 const historyFilterReset = document.querySelector('#historyFilterReset');
 const historyResultCount = document.querySelector('#historyResultCount');
+const historyLoadMore = document.querySelector('#historyLoadMore');
+const historyLoadError = document.querySelector('#historyLoadError');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const currentTitle = document.querySelector('#currentTitle');
@@ -96,6 +98,10 @@ let currentBrowserLocation = null;
 let displayedOrder = null;
 let displayedRouteDistance = null;
 let historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
+let appliedHistoryFilters = new URLSearchParams(new FormData(historyFilterForm)).toString();
+let historyPageCount = 1;
+let historyRevision = 0;
+let historyLoading = false;
 let scoreState = {
   currentScore: 0,
   lifetimeScore: 0,
@@ -396,6 +402,7 @@ function setLoading(loading) {
   actions.setAttribute('aria-busy', String(loading));
   if (state) renderActionDock();
   renderOfflineQueueStatus();
+  historyLoadMore.disabled = loading || historyLoading;
   if (!loading && realtimeRefreshQueued && !refreshPromise) {
     realtimeRefreshQueued = false;
     queueMicrotask(() => refresh({ preserveMessage: true }));
@@ -778,7 +785,9 @@ function renderHistory() {
     ? `最終配達: ${formatJapanTime(historyState.summary.lastDeliveredAt)}`
     : 'まだ完了した配達はありません。';
   deliveryHistoryList.replaceChildren();
-  historyResultCount.textContent = `条件に一致 ${historyState.summary.filteredDeliveries ?? historyState.deliveries.length}件（最大20件表示）`;
+  historyResultCount.textContent = `条件に一致 ${historyState.summary.filteredDeliveries ?? historyState.deliveries.length}件（${historyState.deliveries.length}件表示）`;
+  historyLoadMore.classList.toggle('hidden', !historyState.pagination?.hasMore);
+  historyLoadMore.disabled = isLoading || historyLoading;
 
   if (!historyState.deliveries.length) {
     const item = document.createElement('li');
@@ -790,6 +799,7 @@ function renderHistory() {
 
   for (const assignment of historyState.deliveries) {
     const item = document.createElement('li');
+    item.dataset.assignmentId = assignment.id;
     const title = document.createElement('strong');
     const route = document.createElement('span');
     const time = document.createElement('time');
@@ -930,8 +940,36 @@ async function refresh(options = {}) {
   }
 }
 
+async function fetchHistoryPage(filters, token, cursor = null) {
+  const parameters = new URLSearchParams(filters);
+  if (cursor !== null) parameters.set('cursor', cursor);
+  const response = await fetch(`/api/deliveries/history?${parameters}`, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
+  return data;
+}
+
+async function fetchVisibleHistory(filters, token, pageCount) {
+  let result = await fetchHistoryPage(filters, token);
+  for (let page = 1; page < pageCount && result.pagination.hasMore; page += 1) {
+    const next = await fetchHistoryPage(filters, token, result.pagination.nextCursor);
+    result = { ...next, deliveries: [...result.deliveries, ...next.deliveries] };
+  }
+  return result;
+}
+
+function resetHistory() {
+  historyRevision += 1;
+  historyPageCount = 1;
+  appliedHistoryFilters = new URLSearchParams(new FormData(historyFilterForm)).toString();
+  historyState = { summary: { completedDeliveries: 0, lastDeliveredAt: null }, deliveries: [] };
+  historyLoadError.classList.add('hidden');
+  renderHistory();
+}
+
 async function performRefresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
+    resetHistory();
     mapStartedForSession = false;
     deliveryMap.disable();
     currentBrowserLocation = null;
@@ -961,22 +999,21 @@ async function performRefresh({ preserveMessage = false } = {}) {
     workflow.classList.remove('hidden');
     if (!mapStartedForSession) mapStartedForSession = deliveryMap.enable();
     render();
-    const historyParameters = new URLSearchParams(new FormData(historyFilterForm));
+    const historyRequestRevision = historyRevision;
+    const token = driverToken;
     const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
-    const [historyResponse, scoreResponse, rankingResponse] = await Promise.all([
-      fetch(`/api/deliveries/history?${historyParameters}`, { headers: authenticatedHeaders }),
+    const [history, scoreResponse, rankingResponse] = await Promise.all([
+      fetchVisibleHistory(appliedHistoryFilters, token, historyPageCount),
       fetch('/api/drivers/me/score', { headers: authenticatedHeaders }),
       fetch('/api/drivers/ranking', { headers: authenticatedHeaders }),
     ]);
-    const [history, score, ranking] = await Promise.all([
-      historyResponse.json().catch(() => ({})),
+    const [score, ranking] = await Promise.all([
       scoreResponse.json().catch(() => ({})),
       rankingResponse.json().catch(() => ({})),
     ]);
-    if (!historyResponse.ok) throw new Error(`${history.code}: ${history.message}`);
     if (!scoreResponse.ok) throw new Error(`${score.code}: ${score.message}`);
     if (!rankingResponse.ok) throw new Error(`${ranking.code}: ${ranking.message}`);
-    historyState = history;
+    if (historyRevision === historyRequestRevision && driverToken === token) historyState = history;
     scoreState = score;
     rankingState = ranking;
     lastSuccessfulRefreshAt = Date.now();
@@ -1366,11 +1403,12 @@ detail.addEventListener('click', (event) => {
 
 historyFilterForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  resetHistory();
   setLoading(true);
   setMessage('配達履歴を絞り込んでいます。', 'loading');
   try {
-    await refresh({ preserveMessage: true });
-    setMessage('配達履歴を更新しました。', 'success');
+    if (refreshPromise) await refreshPromise;
+    if (await refresh({ preserveMessage: true })) setMessage('配達履歴を更新しました。', 'success');
   } finally {
     setLoading(false);
   }
@@ -1378,11 +1416,42 @@ historyFilterForm.addEventListener('submit', async (event) => {
 
 historyFilterReset.addEventListener('click', async () => {
   historyFilterForm.reset();
+  resetHistory();
   setLoading(true);
   try {
-    await refresh({ preserveMessage: true });
-    setMessage('絞り込み条件をリセットしました。', 'success');
+    if (refreshPromise) await refreshPromise;
+    if (await refresh({ preserveMessage: true })) setMessage('絞り込み条件をリセットしました。', 'success');
   } finally {
+    setLoading(false);
+  }
+});
+
+historyLoadMore.addEventListener('click', async () => {
+  if (isLoading || historyLoading || !historyState.pagination?.hasMore) return;
+  historyLoading = true;
+  setLoading(true);
+  historyLoadMore.textContent = '読み込み中...';
+  historyLoadError.classList.add('hidden');
+  deliveryHistoryList.setAttribute('aria-busy', 'true');
+  try {
+    if (refreshPromise) await refreshPromise;
+    const revision = historyRevision;
+    const token = driverToken;
+    if (!token || !historyState.pagination?.hasMore) return;
+    const next = await fetchHistoryPage(appliedHistoryFilters, token, historyState.pagination.nextCursor);
+    if (historyRevision !== revision || driverToken !== token) return;
+    const loadedIds = new Set(historyState.deliveries.map((assignment) => assignment.id));
+    historyState = { ...next, deliveries: [...historyState.deliveries, ...next.deliveries.filter((assignment) => !loadedIds.has(assignment.id))] };
+    historyPageCount += 1;
+    renderHistory();
+    if (!next.pagination.hasMore) historyResultCount.focus({ preventScroll: true });
+  } catch {
+    historyLoadError.textContent = '追加の履歴を読み込めませんでした。もう一度お試しください。';
+    historyLoadError.classList.remove('hidden');
+  } finally {
+    historyLoading = false;
+    historyLoadMore.textContent = 'さらに読み込む';
+    deliveryHistoryList.setAttribute('aria-busy', 'false');
     setLoading(false);
   }
 });

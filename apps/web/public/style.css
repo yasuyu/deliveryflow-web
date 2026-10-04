@@ -267,6 +267,8 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .history-filter__actions { grid-column: 1 / -1; }
 .history-filter__actions button { min-height: 44px; }
 .history-result-count { color: var(--muted); font-size: 13px; }
+#historyLoadMore { width: 100%; min-height: 44px; margin: 16px 0 0; }
+.history-load-error { color: var(--danger); font-size: 13px; }
 .history-list { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
 .history-list li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px 12px; align-items: center; min-width: 0; padding: 14px; border: 1px solid #dce4dc; border-radius: 11px; background: #fff; }
 .history-list li > strong { min-width: 0; line-height: 1.45; overflow-wrap: break-word; }

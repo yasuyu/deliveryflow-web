@@ -753,6 +753,10 @@ function historyFilters(searchParams) {
 
 async function deliveryHistory(driverId, searchParams) {
   const filters = historyFilters(searchParams);
+  const cursorValue = searchParams.get('cursor');
+  if (cursorValue !== null && (!/^[1-9]\d{0,15}$/.test(cursorValue) || !Number.isSafeInteger(Number(cursorValue)))) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'cursorが正しくありません');
+  }
   const where = { driverId };
   if (filters.status === 'DELIVERED') where.deliveredAt = { not: null };
   if (filters.status === 'PICKED_UP') {
@@ -783,7 +787,17 @@ async function deliveryHistory(driverId, searchParams) {
     };
   }
 
-  const [completedDeliveries, latestCompleted, filteredDeliveries, deliveries] = await prisma.$transaction([
+  let pageWhere = where;
+  if (cursorValue !== null) {
+    const anchor = await prisma.assignment.findFirst({ where: { ...where, id: Number(cursorValue) } });
+    if (!anchor) throw new ApiError(400, 'VALIDATION_ERROR', 'cursorが現在の配達員・絞り込み条件に一致しません');
+    // New arrivals cannot shift this timestamp/ID boundary between pages.
+    pageWhere = { AND: [where, { OR: [
+      { [dateField]: { lt: anchor[dateField] } },
+      { [dateField]: anchor[dateField], id: { lt: anchor.id } },
+    ] }] };
+  }
+  const [completedDeliveries, latestCompleted, filteredDeliveries, page] = await prisma.$transaction([
     prisma.assignment.count({
       where: { driverId, deliveredAt: { not: null } },
     }),
@@ -794,13 +808,15 @@ async function deliveryHistory(driverId, searchParams) {
     }),
     prisma.assignment.count({ where }),
     prisma.assignment.findMany({
-      where,
+      where: pageWhere,
       include: { order: { include: { store: true } }, scoreEvent: true },
-      orderBy: { [dateField]: 'desc' },
-      take: 20,
+      orderBy: [{ [dateField]: 'desc' }, { id: 'desc' }],
+      take: 21,
     }),
   ]);
+  const deliveries = page.slice(0, 20);
   return {
+    pagination: { pageSize: 20, hasMore: page.length > 20, nextCursor: page.length > 20 ? String(deliveries.at(-1).id) : null },
     summary: {
       completedDeliveries,
       lastDeliveredAt: latestCompleted?.deliveredAt || null,
