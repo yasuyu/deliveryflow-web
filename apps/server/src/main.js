@@ -81,6 +81,30 @@ if (!process.env.DATABASE_URL) {
 }
 
 const prisma = new PrismaClient();
+let sqliteTransactionQueue = Promise.resolve();
+
+function databaseTransaction(operation) {
+  const run = async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        return await prisma.$transaction(operation, {
+          isolationLevel: 'Serializable', maxWait: 10_000, timeout: 10_000,
+        });
+      } catch (error) {
+        if (!['P2034', 'P2002', 'P1008', 'P2028'].includes(error.code)) throw error;
+        if (attempt === 3) {
+          throw new ApiError(409, 'CONCURRENT_OPERATION_RETRY', '操作が競合しました。最新の状態を確認して再送してください');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+  };
+  if (databaseProvider !== 'sqlite') return run();
+  // SQLite has one writer; queue local transactions instead of waiting on its write lock.
+  const result = sqliteTransactionQueue.then(run, run);
+  sqliteTransactionQueue = result.catch(() => {});
+  return result;
+}
 let realtimeHub;
 const port = positiveIntegerFromEnv('PORT', 3000);
 const offerTtlMilliseconds = positiveIntegerFromEnv('OFFER_TTL_SECONDS', 30) * 1000;
@@ -280,7 +304,7 @@ function readJsonBody(request) {
       request.resume();
       return;
     }
-    let body = '';
+    const chunks = [];
     let receivedBytes = 0;
     let tooLarge = false;
     request.on('data', (chunk) => {
@@ -289,7 +313,7 @@ function readJsonBody(request) {
         tooLarge = true;
         return;
       }
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on('end', () => {
       if (tooLarge) {
@@ -297,11 +321,14 @@ function readJsonBody(request) {
         return;
       }
       try {
+        const body = Buffer.concat(chunks).toString('utf8');
         resolve(body ? JSON.parse(body) : {});
       } catch {
         reject(new ApiError(400, 'INVALID_JSON', 'JSONの形式が正しくありません'));
       }
     });
+    request.on('error', reject);
+    request.on('aborted', () => reject(new ApiError(400, 'REQUEST_ABORTED', '送信が中断されました')));
   });
 }
 
@@ -352,38 +379,60 @@ async function runIdempotently(request, driver, operation) {
   const identity = {
     key_endpoint_driverId: { key: key.trim(), endpoint, driverId: driver.id },
   };
-  const previous = await prisma.idempotencyKey.findUnique({ where: identity });
-  if (previous?.response !== null && previous?.response !== undefined) {
-    return { status: previous.statusCode, body: JSON.parse(previous.response) };
-  }
-  if (previous) {
-    throw new ApiError(409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS', '同じリクエストを処理中です');
-  }
-
-  try {
-    await prisma.idempotencyKey.create({
-      data: { key: key.trim(), endpoint, driverId: driver.id },
-    });
-  } catch (error) {
-    if (error.code === 'P2002') {
-      throw new ApiError(409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS', '同じリクエストを処理中です');
+  return databaseTransaction(async (transaction) => {
+    const current = await transaction.driver.findUnique({ where: { id: driver.id } });
+    if (!current || current.accessTokenHash !== driver.accessTokenHash) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'ログインし直してください');
     }
-    throw error;
-  }
-
-  try {
-    const body = await operation();
-    await prisma.idempotencyKey.update({
+    const previous = await transaction.idempotencyKey.findUnique({ where: identity });
+    if (previous?.response !== null && previous?.response !== undefined) {
+      return { status: previous.statusCode, body: JSON.parse(previous.response), replayed: true };
+    }
+    // Only old versions can leave a committed key without its operation's response.
+    const recovered = previous ? await recoverInterruptedDelivery(transaction, current, endpoint) : null;
+    if (previous && !/^\/api\/(offers\/\d+\/accept|assignments\/\d+\/(pickup|complete))$/.test(endpoint)) {
+      throw new ApiError(409, 'IDEMPOTENCY_RECOVERY_REQUIRED', '旧版で中断された操作です。最新の状態を確認し、新しい操作として実行してください');
+    }
+    if (!previous) {
+      await transaction.idempotencyKey.create({
+        data: { key: key.trim(), endpoint, driverId: driver.id },
+      });
+    }
+    const body = recovered ? recovered.body : await operation(transaction, current);
+    await transaction.idempotencyKey.update({
       where: identity,
       data: { statusCode: 200, response: JSON.stringify(body) },
     });
-    return { status: 200, body };
-  } catch (error) {
-    await prisma.idempotencyKey.deleteMany({
-      where: { key: key.trim(), endpoint, driverId: driver.id },
+    return { status: 200, body, replayed: Boolean(recovered) };
+  });
+}
+
+async function recoverInterruptedDelivery(client, driver, endpoint) {
+  const accept = endpoint.match(/^\/api\/offers\/(\d+)\/accept$/);
+  const action = endpoint.match(/^\/api\/assignments\/(\d+)\/(pickup|complete)$/);
+  let scoreAward;
+  if (accept) {
+    const offer = await client.offer.findFirst({
+      where: { id: Number(accept[1]), driverId: driver.id, status: 'ACCEPTED' },
+      include: { order: { include: { assignment: true } } },
     });
-    throw error;
-  }
+    if (!offer || offer.order.assignment?.driverId !== driver.id) return null;
+  } else if (action) {
+    const assignment = await client.assignment.findFirst({
+      where: { id: Number(action[1]), driverId: driver.id }, include: { scoreEvent: true },
+    });
+    if (action[2] === 'pickup') {
+      if (!assignment?.pickedUpAt) return null;
+    } else {
+      if (!assignment?.deliveredAt || !assignment.scoreEvent) return null;
+      const event = assignment.scoreEvent;
+      scoreAward = {
+        points: event.points, reason: event.reason,
+        breakdown: parseBreakdown(event.breakdown), createdAt: event.createdAt,
+      };
+    }
+  } else return null;
+  return { body: { ...await dashboard(driver.id, client), ...(scoreAward ? { scoreAward } : {}) } };
 }
 
 async function createNextOffer(driver, client = prisma) {
@@ -463,26 +512,28 @@ async function restoreOrderWhenCandidatesAreGone(orderId, client = prisma) {
   }
 }
 
-async function expireOffers() {
-  const expired = await prisma.offer.findMany({
+async function expireOffers(client) {
+  const expired = await client.offer.findMany({
     where: { status: 'PENDING', expiresAt: { lte: new Date() } },
     select: { id: true, orderId: true, driverId: true },
   });
 
+  let changed = false;
   for (const offer of expired) {
-    const result = await prisma.offer.updateMany({
-      where: { id: offer.id, status: 'PENDING' },
+    const result = await client.offer.updateMany({
+      where: { id: offer.id, status: 'PENDING', expiresAt: { lte: new Date() } },
       data: { status: 'EXPIRED' },
     });
     if (!result.count) continue;
+    changed = true;
 
-    await prisma.driver.updateMany({
+    await client.driver.updateMany({
       where: { id: offer.driverId, status: 'OFFERED' },
       data: { status: 'IDLE' },
     });
-    await restoreOrderWhenCandidatesAreGone(offer.orderId);
+    await restoreOrderWhenCandidatesAreGone(offer.orderId, client);
   }
-  if (expired.length) realtimeHub?.publish('offer.expired');
+  return changed;
 }
 
 async function ensureSeed() {
@@ -517,19 +568,31 @@ async function ensureSeed() {
   if (!active) await createNextOffer(driver);
 }
 
-async function dashboard(driverId) {
-  await expireOffers();
-  const driver = await prisma.driver.findUnique({ where: { id: driverId } });
-  const active = await prisma.assignment.count({
+async function dashboard(driverId, client = null) {
+  if (!client) {
+    const result = await databaseTransaction(async (transaction) => {
+      const expired = await expireOffers(transaction);
+      return { body: await dashboardSnapshot(driverId, transaction), expired };
+    });
+    if (result.expired) realtimeHub?.publish('offer.expired');
+    return result.body;
+  }
+  await expireOffers(client);
+  return dashboardSnapshot(driverId, client);
+}
+
+async function dashboardSnapshot(driverId, client) {
+  const driver = await client.driver.findUnique({ where: { id: driverId } });
+  const active = await client.assignment.count({
     where: { driverId: driver.id, deliveredAt: null },
   });
-  if (driver.status === 'IDLE' && !active) await createNextOffer(driver);
+  if (driver.status === 'IDLE' && !active) await createNextOffer(driver, client);
 
-  const offer = await prisma.offer.findFirst({
+  const offer = await client.offer.findFirst({
     where: { driverId: driver.id, status: 'PENDING' },
     include: { order: { include: { store: true } } },
   });
-  const assignment = await prisma.assignment.findFirst({
+  const assignment = await client.assignment.findFirst({
     where: { driverId: driver.id, deliveredAt: null },
     include: { order: { include: { store: true } } },
   });
@@ -602,36 +665,34 @@ async function driverScore(driverId) {
   };
 }
 
-async function updateSimulatorWeather(condition) {
+async function updateSimulatorWeather(condition, client) {
   if (!['CLEAR', 'RAIN'].includes(condition)) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'conditionはCLEARまたはRAINを指定してください');
   }
-  simulatedWeatherCondition = condition;
-
-  const rules = await prisma.scoreRule.findMany();
-  const pendingOffers = await prisma.offer.findMany({
+  const rules = await client.scoreRule.findMany();
+  const pendingOffers = await client.offer.findMany({
     where: { status: 'PENDING', driver: { status: 'IDLE' } },
     include: { order: { include: { store: true } } },
   });
-  await prisma.$transaction(pendingOffers.map((offer) => {
+  for (const offer of pendingOffers) {
     const scoreSnapshot = buildScoreSnapshot(rules, {
-      weatherCondition: simulatedWeatherCondition,
+      weatherCondition: condition,
       at: scoreEvaluationTime(),
       pickupToDropoffMeters: distanceMeters(
         { latitude: offer.order.store.latitude, longitude: offer.order.store.longitude },
         { latitude: offer.order.dropoffLatitude, longitude: offer.order.dropoffLongitude },
       ),
     });
-    return prisma.offer.update({
+    await client.offer.update({
       where: { id: offer.id },
       data: {
         estimatedPoints: scoreSnapshot.estimatedPoints,
         scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
       },
     });
-  }));
+  }
   return {
-    weatherCondition: simulatedWeatherCondition,
+    weatherCondition: condition,
     message: condition === 'RAIN'
       ? '雨天に切り替えました。未表示のオファーから雨天ボーナスが反映されます。'
       : '晴れに切り替えました。未表示のオファーから雨天ボーナスが外れます。',
@@ -838,19 +899,19 @@ async function deliveryHistory(driverId, searchParams) {
   };
 }
 
-async function startShift(driver) {
+async function startShift(driver, client) {
   if (driver.status !== 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '退勤中のときだけ稼働開始できます');
   }
-  const updated = await prisma.driver.update({
+  const updated = await client.driver.update({
     where: { id: driver.id },
     data: { status: 'IDLE', shiftStartedAt: new Date() },
   });
-  await createNextOffer(updated);
+  await createNextOffer(updated, client);
   return publicDriver(updated);
 }
 
-async function endShift(driver) {
+async function endShift(driver, client) {
   if (driver.status === 'BUSY') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '配達中は退勤できません');
   }
@@ -860,33 +921,31 @@ async function endShift(driver) {
 
   const endedAt = new Date();
   const startedAt = driver.shiftStartedAt || endedAt;
-  const pendingOffers = await prisma.offer.findMany({
+  const pendingOffers = await client.offer.findMany({
     where: { driverId: driver.id, status: 'PENDING' },
     select: { orderId: true },
   });
-  const [completedDeliveries, scoreSummary, , updated] = await prisma.$transaction([
-    prisma.assignment.count({
-      where: { driverId: driver.id, deliveredAt: { gte: startedAt, lte: endedAt } },
-    }),
-    prisma.scoreEvent.aggregate({
-      where: { driverId: driver.id, createdAt: { gte: startedAt, lte: endedAt } },
-      _sum: { points: true },
-    }),
-    prisma.offer.updateMany({
-      where: { driverId: driver.id, status: 'PENDING' },
-      data: { status: 'REJECTED' },
-    }),
-    prisma.driver.update({
-      where: { id: driver.id },
-      data: {
-        status: 'OFFLINE',
-        shiftStartedAt: null,
-        ...clearedLocation,
-      },
-    }),
-  ]);
+  const completedDeliveries = await client.assignment.count({
+    where: { driverId: driver.id, deliveredAt: { gte: startedAt, lte: endedAt } },
+  });
+  const scoreSummary = await client.scoreEvent.aggregate({
+    where: { driverId: driver.id, createdAt: { gte: startedAt, lte: endedAt } },
+    _sum: { points: true },
+  });
+  await client.offer.updateMany({
+    where: { driverId: driver.id, status: 'PENDING' },
+    data: { status: 'REJECTED' },
+  });
+  const updated = await client.driver.update({
+    where: { id: driver.id },
+    data: {
+      status: 'OFFLINE',
+      shiftStartedAt: null,
+      ...clearedLocation,
+    },
+  });
   for (const offer of pendingOffers) {
-    await restoreOrderWhenCandidatesAreGone(offer.orderId);
+    await restoreOrderWhenCandidatesAreGone(offer.orderId, client);
   }
   return {
     ...publicDriver(updated),
@@ -900,7 +959,7 @@ async function endShift(driver) {
   };
 }
 
-async function updateDriverLocation(driver, location) {
+async function updateDriverLocation(driver, location, client) {
   if (driver.status === 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '現在地は勤務中のみ更新できます');
   }
@@ -912,7 +971,7 @@ async function updateDriverLocation(driver, location) {
     throw new ApiError(400, 'VALIDATION_ERROR', normalized.validationMessage);
   }
 
-  const updated = await prisma.driver.update({
+  const updated = await client.driver.update({
     where: { id: driver.id },
     data: {
       latitude: normalized.latitude,
@@ -925,30 +984,28 @@ async function updateDriverLocation(driver, location) {
   return publicLocation(updated);
 }
 
-async function showCurrentOffer(driver) {
+async function showCurrentOffer(driver, client) {
   if (driver.status !== 'IDLE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '待機中のときだけオファーを表示できます');
   }
-  await expireOffers();
-  await createNextOffer(driver);
-  const offer = await prisma.offer.findFirst({
+  await expireOffers(client);
+  await createNextOffer(driver, client);
+  const offer = await client.offer.findFirst({
     where: { driverId: driver.id, status: 'PENDING' },
     orderBy: { id: 'asc' },
     include: { order: { include: { store: true } } },
   });
   if (!offer) throw new ApiError(404, 'OFFER_NOT_FOUND', '現在受け取れるオファーはありません。現在地を更新してお待ちください');
 
-  const [shownOffer] = await prisma.$transaction([
-    prisma.offer.update({
-      where: { id: offer.id },
-      data: { expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
-      include: { order: { include: { store: true } } },
-    }),
-    prisma.driver.update({
-      where: { id: driver.id },
-      data: { status: 'OFFERED' },
-    }),
-  ]);
+  const shownOffer = await client.offer.update({
+    where: { id: offer.id },
+    data: { expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
+    include: { order: { include: { store: true } } },
+  });
+  await client.driver.update({
+    where: { id: driver.id },
+    data: { status: 'OFFERED' },
+  });
   return {
     ...shownOffer,
     acceptanceSeconds: offerTtlMilliseconds / 1000,
@@ -956,116 +1013,111 @@ async function showCurrentOffer(driver) {
   };
 }
 
-async function acceptOffer(driver, offerId) {
+async function acceptOffer(driver, offerId, transaction) {
   if (driver.status !== 'OFFERED') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'オファー確認中のみ受諾できます');
   }
 
-  await expireOffers();
-  return prisma.$transaction(async (transaction) => {
-    const accepted = await transaction.offer.updateMany({
-      where: {
-        id: offerId,
-        driverId: driver.id,
-        status: 'PENDING',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
-      data: { status: 'ACCEPTED' },
-    });
-    if (!accepted.count) {
-      throw new ApiError(409, 'OFFER_ALREADY_TAKEN', '期限切れまたは処理済みのオファーです');
-    }
-
-    const offer = await transaction.offer.findUnique({ where: { id: offerId } });
-    const siblingOffers = await transaction.offer.findMany({
-      where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
-      select: { driverId: true },
-    });
-    const assigned = await transaction.order.updateMany({
-      where: { id: offer.orderId, status: 'OFFERING' },
-      data: { status: 'ASSIGNED' },
-    });
-    if (!assigned.count) {
-      throw new ApiError(409, 'INVALID_STATE_TRANSITION', '注文を割り当てられる状態ではありません');
-    }
-
-    await transaction.offer.updateMany({
-      where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
-      data: { status: 'WITHDRAWN' },
-    });
-    if (siblingOffers.length) {
-      await transaction.driver.updateMany({
-        where: {
-          id: { in: siblingOffers.map((sibling) => sibling.driverId) },
-          status: 'OFFERED',
-        },
-        data: { status: 'IDLE' },
-      });
-    }
-    await transaction.driver.update({
-      where: { id: driver.id },
-      data: { status: 'BUSY' },
-    });
-    await transaction.assignment.create({
-      data: {
-        orderId: offer.orderId,
-        driverId: driver.id,
-        estimatedPoints: offer.estimatedPoints,
-        scoreBreakdown: offer.scoreBreakdown,
-      },
-    });
-    return offer;
+  await expireOffers(transaction);
+  const accepted = await transaction.offer.updateMany({
+    where: {
+      id: offerId,
+      driverId: driver.id,
+      status: 'PENDING',
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    data: { status: 'ACCEPTED' },
   });
+  if (!accepted.count) {
+    throw new ApiError(409, 'OFFER_ALREADY_TAKEN', '期限切れまたは処理済みのオファーです');
+  }
+
+  const offer = await transaction.offer.findUnique({ where: { id: offerId } });
+  const siblingOffers = await transaction.offer.findMany({
+    where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
+    select: { driverId: true },
+  });
+  const assigned = await transaction.order.updateMany({
+    where: { id: offer.orderId, status: 'OFFERING' },
+    data: { status: 'ASSIGNED' },
+  });
+  if (!assigned.count) {
+    throw new ApiError(409, 'INVALID_STATE_TRANSITION', '注文を割り当てられる状態ではありません');
+  }
+
+  await transaction.offer.updateMany({
+    where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
+    data: { status: 'WITHDRAWN' },
+  });
+  if (siblingOffers.length) {
+    await transaction.driver.updateMany({
+      where: {
+        id: { in: siblingOffers.map((sibling) => sibling.driverId) },
+        status: 'OFFERED',
+      },
+      data: { status: 'IDLE' },
+    });
+  }
+  await transaction.driver.update({
+    where: { id: driver.id },
+    data: { status: 'BUSY' },
+  });
+  await transaction.assignment.create({
+    data: {
+      orderId: offer.orderId,
+      driverId: driver.id,
+      estimatedPoints: offer.estimatedPoints,
+      scoreBreakdown: offer.scoreBreakdown,
+    },
+  });
+  return offer;
 }
 
-async function rejectOffer(driver, offerId) {
+async function rejectOffer(driver, offerId, client) {
   if (driver.status !== 'OFFERED') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'オファー確認中のみ辞退できます');
   }
-  const offer = await prisma.offer.findFirst({
+  const offer = await client.offer.findFirst({
     where: { id: offerId, driverId: driver.id, status: 'PENDING' },
   });
   if (!offer) throw new ApiError(409, 'OFFER_ALREADY_TAKEN', '処理済みのオファーです');
 
-  await prisma.$transaction([
-    prisma.offer.updateMany({
-      where: { id: offerId, driverId: driver.id, status: 'PENDING' },
-      data: { status: 'REJECTED' },
-    }),
-    prisma.driver.update({ where: { id: driver.id }, data: { status: 'IDLE' } }),
-  ]);
-  await restoreOrderWhenCandidatesAreGone(offer.orderId);
-  await createNextOffer(driver);
+  const rejected = await client.offer.updateMany({
+    where: { id: offerId, driverId: driver.id, status: 'PENDING' },
+    data: { status: 'REJECTED' },
+  });
+  if (!rejected.count) throw new ApiError(409, 'OFFER_ALREADY_TAKEN', '処理済みのオファーです');
+  const updated = await client.driver.update({ where: { id: driver.id }, data: { status: 'IDLE' } });
+  await restoreOrderWhenCandidatesAreGone(offer.orderId, client);
+  await createNextOffer(updated, client);
 }
 
-async function pickupAssignment(driver, assignmentId) {
+async function pickupAssignment(driver, assignmentId, client) {
   if (driver.status !== 'BUSY') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '配達中のみ荷物を受け取れます');
   }
-  const assignment = await prisma.assignment.findFirst({
+  const assignment = await client.assignment.findFirst({
     where: { id: assignmentId, driverId: driver.id, pickedUpAt: null },
     include: { order: { include: { store: true } } },
   });
   if (!assignment || assignment.order.status !== 'ASSIGNED') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '受取できる配達がありません');
   }
-  await prisma.$transaction([
-    prisma.assignment.update({
-      where: { id: assignment.id },
-      data: { pickedUpAt: new Date() },
-    }),
-    prisma.order.update({
-      where: { id: assignment.orderId },
-      data: { status: 'PICKED_UP' },
-    }),
-  ]);
+  await client.assignment.update({
+    where: { id: assignment.id },
+    data: { pickedUpAt: new Date() },
+  });
+  await client.order.update({
+    where: { id: assignment.orderId },
+    data: { status: 'PICKED_UP' },
+  });
 }
 
-async function completeAssignment(driver, assignmentId) {
+async function completeAssignment(driver, assignmentId, transaction) {
   if (driver.status !== 'BUSY') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '配達中のみ完了できます');
   }
-  const assignment = await prisma.assignment.findFirst({
+  const assignment = await transaction.assignment.findFirst({
     where: {
       id: assignmentId,
       driverId: driver.id,
@@ -1077,73 +1129,72 @@ async function completeAssignment(driver, assignmentId) {
   if (!assignment || assignment.order.status !== 'PICKED_UP') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる配達がありません');
   }
-  const scoreAward = await prisma.$transaction(async (transaction) => {
-    const completed = await transaction.assignment.updateMany({
-      where: {
-        id: assignment.id,
-        driverId: driver.id,
-        pickedUpAt: { not: null },
-        deliveredAt: null,
-      },
-      data: { deliveredAt: new Date() },
-    });
-    if (!completed.count) {
-      throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'この配達はすでに完了しています');
-    }
-
-    const updatedOrder = await transaction.order.updateMany({
-      where: { id: assignment.orderId, status: 'PICKED_UP' },
-      data: { status: 'DELIVERED' },
-    });
-    if (!updatedOrder.count) {
-      throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる注文状態ではありません');
-    }
-
-    let breakdown = parseBreakdown(assignment.scoreBreakdown);
-    let awardedPoints = assignment.estimatedPoints;
-    if (!breakdown.length) {
-      try {
-        const fallback = buildScoreSnapshot(await transaction.scoreRule.findMany(), {
-          weatherCondition: 'CLEAR',
-          at: new Date('2000-01-01T12:00:00+09:00'),
-          pickupToDropoffMeters: routeDistance(assignment.order, driver).pickupToDropoffMeters,
-        });
-        breakdown = fallback.breakdown;
-        awardedPoints = fallback.estimatedPoints;
-      } catch {
-        throw new ApiError(503, 'SCORE_RULE_UNAVAILABLE', '配達完了の加点ルールを利用できません');
-      }
-    }
-    const reason = breakdown.map((item) => item.label).join(' + ');
-    const event = await transaction.scoreEvent.create({
-      data: {
-        driverId: driver.id,
-        assignmentId: assignment.id,
-        points: awardedPoints,
-        reason,
-        breakdown: JSON.stringify(breakdown),
-      },
-    });
-    await transaction.driver.update({
-      where: { id: driver.id },
-      data: { status: 'IDLE', score: { increment: awardedPoints } },
-    });
-    return {
-      points: event.points,
-      reason: event.reason,
-      breakdown,
-      createdAt: event.createdAt,
-    };
+  const completed = await transaction.assignment.updateMany({
+    where: {
+      id: assignment.id,
+      driverId: driver.id,
+      pickedUpAt: { not: null },
+      deliveredAt: null,
+    },
+    data: { deliveredAt: new Date() },
   });
-  await createNextOffer(driver);
+  if (!completed.count) {
+    throw new ApiError(409, 'INVALID_STATE_TRANSITION', 'この配達はすでに完了しています');
+  }
+
+  const updatedOrder = await transaction.order.updateMany({
+    where: { id: assignment.orderId, status: 'PICKED_UP' },
+    data: { status: 'DELIVERED' },
+  });
+  if (!updatedOrder.count) {
+    throw new ApiError(409, 'INVALID_STATE_TRANSITION', '完了できる注文状態ではありません');
+  }
+
+  let breakdown = parseBreakdown(assignment.scoreBreakdown);
+  let awardedPoints = assignment.estimatedPoints;
+  if (!breakdown.length) {
+    try {
+      const fallback = buildScoreSnapshot(await transaction.scoreRule.findMany(), {
+        weatherCondition: 'CLEAR',
+        at: new Date('2000-01-01T12:00:00+09:00'),
+        pickupToDropoffMeters: routeDistance(assignment.order, driver).pickupToDropoffMeters,
+      });
+      breakdown = fallback.breakdown;
+      awardedPoints = fallback.estimatedPoints;
+    } catch {
+      throw new ApiError(503, 'SCORE_RULE_UNAVAILABLE', '配達完了の加点ルールを利用できません');
+    }
+  }
+  const reason = breakdown.map((item) => item.label).join(' + ');
+  const event = await transaction.scoreEvent.create({
+    data: {
+      driverId: driver.id,
+      assignmentId: assignment.id,
+      points: awardedPoints,
+      reason,
+      breakdown: JSON.stringify(breakdown),
+    },
+  });
+  await transaction.driver.update({
+    where: { id: driver.id },
+    data: { status: 'IDLE', score: { increment: awardedPoints } },
+  });
+  const scoreAward = {
+    points: event.points,
+    reason: event.reason,
+    breakdown,
+    createdAt: event.createdAt,
+  };
+  const updated = await transaction.driver.findUnique({ where: { id: driver.id } });
+  await createNextOffer(updated, transaction);
   return scoreAward;
 }
 
-async function logoutDriver(driver) {
+async function logoutDriver(driver, client) {
   if (driver.status !== 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '勤務中はログアウトできません。退勤してからログアウトしてください');
   }
-  await prisma.driver.update({
+  await client.driver.update({
     where: { id: driver.id },
     data: { accessTokenHash: null },
   });
@@ -1232,7 +1283,14 @@ async function handle(request, response) {
     return json(response, 200, await driverRanking(driver.id));
   }
   if (request.method === 'PUT' && url.pathname === '/api/drivers/me/location') {
-    const updatedLocation = await updateDriverLocation(driver, await readJsonBody(request));
+    const location = await readJsonBody(request);
+    const updatedLocation = await databaseTransaction(async (transaction) => {
+      const current = await transaction.driver.findUnique({ where: { id: driver.id } });
+      if (!current || current.accessTokenHash !== driver.accessTokenHash) {
+        throw new ApiError(401, 'UNAUTHORIZED', 'ログインし直してください');
+      }
+      return updateDriverLocation(current, location, transaction);
+    });
     json(response, 200, updatedLocation);
     realtimeHub.publish('location.updated');
     return;
@@ -1240,60 +1298,59 @@ async function handle(request, response) {
 
   const idempotentResponse = async (operation, reason) => {
     const result = await runIdempotently(request, driver, operation);
+    if (reason === 'simulator.updated' && !result.replayed) simulatedWeatherCondition = result.body.weatherCondition;
     json(response, result.status, result.body);
     realtimeHub.publish(reason);
   };
 
   if (request.method === 'POST' && url.pathname === '/api/shifts/start') {
-    return idempotentResponse(() => startShift(driver), 'shift.started');
+    return idempotentResponse((client, current) => startShift(current, client), 'shift.started');
   }
   if (request.method === 'POST' && url.pathname === '/api/shifts/end') {
-    return idempotentResponse(() => endShift(driver), 'shift.ended');
+    return idempotentResponse((client, current) => endShift(current, client), 'shift.ended');
   }
   if (request.method === 'POST' && url.pathname === '/api/offers/current') {
-    return idempotentResponse(() => showCurrentOffer(driver), 'offer.shown');
+    return idempotentResponse((client, current) => showCurrentOffer(current, client), 'offer.shown');
   }
   if (request.method === 'POST' && url.pathname === '/api/logout') {
-    await idempotentResponse(async () => {
-      await logoutDriver(driver);
+    await idempotentResponse(async (client, current) => {
+      await logoutDriver(current, client);
       return { message: 'ログアウトしました' };
     }, 'session.ended');
     realtimeHub.disconnectDriver(driver.id);
     return;
   }
   if (request.method === 'POST' && url.pathname === '/api/simulator/weather') {
-    return idempotentResponse(async () => {
-      const { condition } = await readJsonBody(request);
-      return updateSimulatorWeather(condition);
-    }, 'simulator.updated');
+    const { condition } = await readJsonBody(request);
+    return idempotentResponse((client) => updateSimulatorWeather(condition, client), 'simulator.updated');
   }
 
   const accept = url.pathname.match(/^\/api\/offers\/(\d+)\/accept$/);
   if (request.method === 'POST' && accept) {
-    return idempotentResponse(async () => {
-      await acceptOffer(driver, Number(accept[1]));
-      return dashboard(driver.id);
+    return idempotentResponse(async (client, current) => {
+      await acceptOffer(current, Number(accept[1]), client);
+      return dashboard(current.id, client);
     }, 'offer.accepted');
   }
   const reject = url.pathname.match(/^\/api\/offers\/(\d+)\/reject$/);
   if (request.method === 'POST' && reject) {
-    return idempotentResponse(async () => {
-      await rejectOffer(driver, Number(reject[1]));
-      return dashboard(driver.id);
+    return idempotentResponse(async (client, current) => {
+      await rejectOffer(current, Number(reject[1]), client);
+      return dashboard(current.id, client);
     }, 'offer.rejected');
   }
   const pickup = url.pathname.match(/^\/api\/assignments\/(\d+)\/pickup$/);
   if (request.method === 'POST' && pickup) {
-    return idempotentResponse(async () => {
-      await pickupAssignment(driver, Number(pickup[1]));
-      return dashboard(driver.id);
+    return idempotentResponse(async (client, current) => {
+      await pickupAssignment(current, Number(pickup[1]), client);
+      return dashboard(current.id, client);
     }, 'assignment.picked_up');
   }
   const complete = url.pathname.match(/^\/api\/assignments\/(\d+)\/complete$/);
   if (request.method === 'POST' && complete) {
-    return idempotentResponse(async () => {
-      const scoreAward = await completeAssignment(driver, Number(complete[1]));
-      return { ...await dashboard(driver.id), scoreAward };
+    return idempotentResponse(async (client, current) => {
+      const scoreAward = await completeAssignment(current, Number(complete[1]), client);
+      return { ...await dashboard(current.id, client), scoreAward };
     }, 'assignment.completed');
   }
   return json(response, 404, { code: 'NOT_FOUND', message: 'このエンドポイントは存在しません' });

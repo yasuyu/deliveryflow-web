@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const fs = require('node:fs/promises');
 const net = require('node:net');
+const http = require('node:http');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { WebSocket } = require('ws');
@@ -92,15 +93,29 @@ function updateLocation(token, latitude = 35.009, longitude = 135.768) {
   });
 }
 
-before(async () => {
-  await createTestDatabase();
+async function safetyDriver() {
+  const registration = await request('/api/drivers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '安全性確認', pin: '123456' }),
+  });
+  assert.equal(registration.status, 201);
+  const token = registration.body.accessToken;
+  const post = (pathname, key = randomUUID()) => request(pathname, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key },
+  });
+  assert.equal((await post('/api/shifts/start')).status, 200);
+  assert.equal((await updateLocation(token)).status, 200);
+  const offer = await post('/api/offers/current');
+  assert.equal(offer.status, 200);
+  return { id: registration.body.driver.id, token, post, offer: offer.body };
+}
 
-  const port = await getFreePort();
-  baseUrl = `http://127.0.0.1:${port}`;
+async function startServer(port) {
   serverProcess = spawn(process.execPath, ['apps/server/src/main.js'], {
     cwd: projectRoot,
     env: {
       ...process.env,
+      DATABASE_PROVIDER: 'sqlite',
       DATABASE_URL: databaseUrl,
       PORT: String(port),
       OFFER_TTL_SECONDS: '30',
@@ -111,6 +126,13 @@ before(async () => {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await waitForServer(baseUrl);
+}
+
+before(async () => {
+  await createTestDatabase();
+  const port = await getFreePort();
+  baseUrl = `http://127.0.0.1:${port}`;
+  await startServer(port);
   const registration = await request('/api/drivers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1092,5 +1114,176 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   assert.equal(score.body.lifetimeScore, expectedRainPoints);
   assert.equal(score.body.recentEvents.length, 1);
   assert.deepEqual(score.body.recentEvents[0].breakdown, offer.body.scoreBreakdown);
+});
+
+test('日本語の途中で分割されたJSON本文を文字化けせず保存する', async () => {
+  const name = '確認テスト';
+  const payload = Buffer.from(JSON.stringify({ name, pin: '123456' }));
+  const boundary = payload.findIndex((byte) => byte >= 128) + 1;
+  const result = await new Promise((resolve, reject) => {
+    const outgoing = http.request(`${baseUrl}/api/drivers`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks)) }));
+      response.on('error', reject);
+    });
+    outgoing.on('error', reject);
+    outgoing.write(payload.subarray(0, boundary));
+    setTimeout(() => outgoing.end(payload.subarray(boundary)), 50);
+  });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.driver.name, name);
+});
+
+test('受諾と退勤・辞退を同時に送っても未完了の配達員はBUSYのままになる', async () => {
+  for (const alternative of ['end', 'reject']) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const driver = await safetyDriver();
+      const results = await Promise.all([
+        driver.post(`/api/offers/${driver.offer.id}/accept`),
+        driver.post(alternative === 'end' ? '/api/shifts/end' : `/api/offers/${driver.offer.id}/reject`),
+      ]);
+      assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
+      const dashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${driver.token}` } });
+      assert.equal(dashboard.status, 200);
+      if (dashboard.body.assignment) {
+        assert.equal(dashboard.body.driver.status, 'BUSY');
+        const id = dashboard.body.assignment.id;
+        assert.equal((await driver.post(`/api/assignments/${id}/pickup`)).status, 200);
+        assert.equal((await driver.post(`/api/assignments/${id}/complete`)).status, 200);
+      }
+      if (dashboard.body.driver.status !== 'OFFLINE') assert.equal((await driver.post('/api/shifts/end')).status, 200);
+    }
+  }
+});
+
+test('同じキーの同時受諾・完了は同じ応答を返し割当・加点を一度だけ保存する', async () => {
+  const driver = await safetyDriver();
+  const acceptKey = randomUUID();
+  const accepted = await Promise.all([
+    driver.post(`/api/offers/${driver.offer.id}/accept`, acceptKey),
+    driver.post(`/api/offers/${driver.offer.id}/accept`, acceptKey),
+  ]);
+  assert.deepEqual(accepted.map((result) => result.status), [200, 200]);
+  assert.deepEqual(accepted[0].body, accepted[1].body);
+  const id = accepted[0].body.assignment.id;
+  assert.equal((await driver.post(`/api/assignments/${id}/pickup`)).status, 200);
+  const completeKey = randomUUID();
+  const completed = await Promise.all([
+    driver.post(`/api/assignments/${id}/complete`, completeKey),
+    driver.post(`/api/assignments/${id}/complete`, completeKey),
+  ]);
+  assert.deepEqual(completed.map((result) => result.status), [200, 200]);
+  assert.deepEqual(completed[0].body, completed[1].body);
+  const database = new DatabaseSync(databasePath);
+  try {
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM Assignment WHERE driverId = ?').get(driver.id).n, 1);
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM ScoreEvent WHERE driverId = ?').get(driver.id).n, 1);
+    assert.equal(database.prepare('SELECT score FROM Driver WHERE id = ?').get(driver.id).score, completed[0].body.scoreAward.points);
+  } finally { database.close(); }
+  assert.equal((await driver.post('/api/shifts/end')).status, 200);
+});
+
+test('再送応答の保存に失敗したら配達完了・加点もロールバックして同じキーで再実行できる', async () => {
+  const driver = await safetyDriver();
+  const accepted = await driver.post(`/api/offers/${driver.offer.id}/accept`);
+  const id = accepted.body.assignment.id;
+  assert.equal((await driver.post(`/api/assignments/${id}/pickup`)).status, 200);
+  const key = randomUUID();
+  const database = new DatabaseSync(databasePath);
+  try {
+    database.exec(`CREATE TRIGGER fail_safety_response BEFORE UPDATE ON IdempotencyKey
+      WHEN NEW.key = '${key}' BEGIN SELECT RAISE(ABORT, 'injected response failure'); END`);
+    const failed = await driver.post(`/api/assignments/${id}/complete`, key);
+    assert.equal(failed.status, 500);
+    assert.equal(database.prepare('SELECT deliveredAt FROM Assignment WHERE id = ?').get(id).deliveredAt, null);
+    assert.equal(database.prepare('SELECT status FROM "Order" WHERE id = ?').get(driver.offer.orderId).status, 'PICKED_UP');
+    assert.equal(database.prepare('SELECT status, score FROM Driver WHERE id = ?').get(driver.id).status, 'BUSY');
+    assert.equal(database.prepare('SELECT score FROM Driver WHERE id = ?').get(driver.id).score, 0);
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM ScoreEvent WHERE assignmentId = ?').get(id).n, 0);
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM IdempotencyKey WHERE key = ?').get(key).n, 0);
+  } finally {
+    database.exec('DROP TRIGGER IF EXISTS fail_safety_response');
+    database.close();
+  }
+  const retry = await driver.post(`/api/assignments/${id}/complete`, key);
+  assert.equal(retry.status, 200);
+  assert.deepEqual((await driver.post(`/api/assignments/${id}/complete`, key)).body, retry.body);
+  assert.equal((await driver.post('/api/shifts/end')).status, 200);
+});
+
+test('サーバーを再起動しても同じキーで完了応答を取得でき二重加点しない', async () => {
+  const driver = await safetyDriver();
+  const accepted = await driver.post(`/api/offers/${driver.offer.id}/accept`);
+  const id = accepted.body.assignment.id;
+  assert.equal((await driver.post(`/api/assignments/${id}/pickup`)).status, 200);
+  const key = randomUUID();
+  const endpoint = `/api/assignments/${id}/complete`;
+  const completed = await driver.post(endpoint, key);
+  assert.equal(completed.status, 200);
+  const stopped = once(serverProcess, 'exit');
+  serverProcess.kill();
+  await stopped;
+  await startServer(Number(new URL(baseUrl).port));
+  const repeated = await driver.post(endpoint, key);
+  assert.equal(repeated.status, 200);
+  assert.deepEqual(repeated.body, completed.body);
+  const database = new DatabaseSync(databasePath);
+  try {
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM ScoreEvent WHERE assignmentId = ?').get(id).n, 1);
+    assert.equal(database.prepare('SELECT score FROM Driver WHERE id = ?').get(driver.id).score, completed.body.scoreAward.points);
+  } finally { database.close(); }
+  assert.equal((await driver.post('/api/shifts/end')).status, 200);
+});
+
+test('旧版の未完了キーは配達結果を確認して復旧し受諾・受取・加点を重複させない', async () => {
+  const driver = await safetyDriver();
+  const database = new DatabaseSync(databasePath);
+  const pending = (endpoint) => {
+    const key = randomUUID();
+    database.prepare('INSERT INTO IdempotencyKey (key, endpoint, driverId, createdAt) VALUES (?, ?, ?, ?)')
+      .run(key, endpoint, driver.id, Date.now() - 86400000);
+    return key;
+  };
+  try {
+    const acceptEndpoint = `/api/offers/${driver.offer.id}/accept`;
+    const accepted = await driver.post(acceptEndpoint, pending(acceptEndpoint));
+    assert.equal(accepted.status, 200);
+    assert.equal((await driver.post(acceptEndpoint, pending(acceptEndpoint))).status, 200);
+    const id = accepted.body.assignment.id;
+    const pickupEndpoint = `/api/assignments/${id}/pickup`;
+    assert.equal((await driver.post(pickupEndpoint)).status, 200);
+    const pickedUpAt = database.prepare('SELECT pickedUpAt FROM Assignment WHERE id = ?').get(id).pickedUpAt;
+    assert.equal((await driver.post(pickupEndpoint, pending(pickupEndpoint))).status, 200);
+    assert.equal(database.prepare('SELECT pickedUpAt FROM Assignment WHERE id = ?').get(id).pickedUpAt, pickedUpAt);
+    const endpoint = `/api/assignments/${id}/complete`;
+    const completed = await driver.post(endpoint);
+    assert.equal(completed.status, 200);
+    const key = pending(endpoint);
+    const recovered = await driver.post(endpoint, key);
+    assert.equal(recovered.status, 200);
+    assert.deepEqual(recovered.body.scoreAward, completed.body.scoreAward);
+    assert.deepEqual((await driver.post(endpoint, key)).body, recovered.body);
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM Assignment WHERE driverId = ?').get(driver.id).n, 1);
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM ScoreEvent WHERE driverId = ?').get(driver.id).n, 1);
+    assert.equal(database.prepare('SELECT score FROM Driver WHERE id = ?').get(driver.id).score, completed.body.scoreAward.points);
+    const shift = await driver.post('/api/shifts/end', pending('/api/shifts/end'));
+    assert.equal(shift.status, 409);
+    assert.equal(shift.body.code, 'IDEMPOTENCY_RECOVERY_REQUIRED');
+    const other = await request('/api/drivers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '別の配達員', pin: '123456' }),
+    });
+    const foreignKey = randomUUID();
+    database.prepare('INSERT INTO IdempotencyKey (key, endpoint, driverId) VALUES (?, ?, ?)').run(foreignKey, endpoint, other.body.driver.id);
+    const forbidden = await request(endpoint, {
+      method: 'POST', headers: { Authorization: `Bearer ${other.body.accessToken}`, 'Idempotency-Key': foreignKey },
+    });
+    assert.equal(forbidden.status, 409);
+    assert.equal(forbidden.body.scoreAward, undefined);
+  } finally { database.close(); }
+  assert.equal((await driver.post('/api/shifts/end')).status, 200);
 });
 
