@@ -23,6 +23,9 @@ test('経路プレビューに地点の順番と直線距離を表示する', ()
   assert.match(html, /プリズムハウス 1号館/);
   assert.match(html, /約850m/);
   assert.match(html, /約1\.3km/);
+  assert.match(html, /<h3 id="routePreviewHeading">経路プレビュー（直線距離）<\/h3>/);
+  assert.match(html, /直線 約850m/);
+  assert.match(html, /直線 約1\.3km/);
   assert.match(html, /実際の道路形状や所要時間は表していません/);
 });
 
@@ -30,6 +33,7 @@ test('現在地がない場合は更新案内を表示する', () => {
   const html = renderRoutePreview(order, { toPickupMeters: null, pickupToDropoffMeters: 500 });
   assert.match(html, /未更新/);
   assert.match(html, /現在地を更新/);
+  assert.doesNotMatch(html, /直線 現在地を更新/);
   assert.match(html, /route-preview__segment--unavailable/);
   assert.match(html, /data-route-kind="offer-preview"/);
 });

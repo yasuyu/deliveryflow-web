@@ -335,7 +335,7 @@ components:
           properties:
             status: { type: string, enum: [AVAILABLE] }
             stage: { type: string, enum: [VIA_PICKUP, TO_DROPOFF], description: VIA_PICKUPは現在地→店舗→配達先。TO_DROPOFFは荷物受取後の店舗→配達先。 }
-            totalDistanceMeters: { type: number, minimum: 0 }
+            totalDistanceMeters: { type: number, minimum: 0, description: 補正後の道路経路に沿った参考の合計距離。routeDistanceの直線距離とは計算基準が異なる。 }
             pickupDistanceMeters: { type: number, minimum: 0, description: グラフ内の店舗位置。受取後は0。 }
             minimumMeters: { type: number, description: 間引き前の全経路の最低標高 }
             maximumMeters: { type: number, description: 間引き前の全経路の最高標高 }

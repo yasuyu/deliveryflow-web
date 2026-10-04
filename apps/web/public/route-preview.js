@@ -74,14 +74,14 @@
     const action = routeAction(order.status);
     return `<section class="route-preview" aria-labelledby="routePreviewHeading">
       <div class="route-preview__heading">
-        <h3 id="routePreviewHeading">経路プレビュー</h3>
+        <h3 id="routePreviewHeading">経路プレビュー（直線距離）</h3>
         <span>外部通信なし</span>
       </div>
       <div class="route-preview__track" role="img" aria-label="現在地から店舗を経由して届け先へ向かう模式図">
         <div class="route-preview__node${unavailableClass}"><span class="route-preview__dot">現在</span><b>現在地</b><small>${locationAvailable ? '更新済み' : '未更新'}</small></div>
-        <div class="route-preview__segment${unavailableSegmentClass}"><span>${formatDistance(routeDistance.toPickupMeters)}</span></div>
+        <div class="route-preview__segment${unavailableSegmentClass}"><span>${locationAvailable ? '直線 ' : ''}${formatDistance(routeDistance.toPickupMeters)}</span></div>
         <div class="route-preview__node"><span class="route-preview__dot">受取</span><b>${escapeHtml(order.store.name)}</b><small>${escapeHtml(order.pickupName)}</small></div>
-        <div class="route-preview__segment"><span>${formatDistance(routeDistance.pickupToDropoffMeters)}</span></div>
+        <div class="route-preview__segment"><span>直線 ${formatDistance(routeDistance.pickupToDropoffMeters)}</span></div>
         <div class="route-preview__node route-preview__node--destination"><span class="route-preview__dot">完了</span><b>届け先</b><small>${escapeHtml(order.dropoffName)}</small></div>
       </div>
       <p class="route-preview__note">上の図は地点の順番と直線距離を示す模式図です。実際の道路形状や所要時間は表していません。</p>

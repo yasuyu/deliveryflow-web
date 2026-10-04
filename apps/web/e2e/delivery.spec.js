@@ -43,6 +43,10 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(elevation.locator('.elevation-extrema dd')).toHaveCount(2);
   await expect(elevation.locator('.elevation-stop').first()).toHaveText('現在地0 m');
   await expect(elevation.locator('.elevation-stop').last()).toContainText('配達先');
+  await expect(elevation.locator('.elevation-distance-label')).toHaveText('道路沿いの距離（参考）');
+  const routePreview = page.locator('.route-preview');
+  await expect(routePreview.locator('h3')).toHaveText('経路プレビュー（直線距離）');
+  await expect(routePreview.locator('.route-preview__segment span')).toHaveText([/直線 約/, /直線 約/]);
   const graphBox = await elevation.locator('.elevation-chart').boundingBox();
   const valuesBox = await elevation.locator('.elevation-extrema').boundingBox();
   expect(valuesBox.x).toBeGreaterThanOrEqual(graphBox.x + graphBox.width);
@@ -62,6 +66,10 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   expect(startStop.x + startStop.width).toBeLessThanOrEqual(endStop.x);
   expect(endStop.x + endStop.width).toBeLessThanOrEqual(narrowGraph.x + narrowGraph.width);
   await page.screenshot({ path: testInfo.outputPath('elevation-profile-narrow.png') });
+  await routePreview.locator('h3').scrollIntoViewIfNeeded();
+  const previewHeading = await routePreview.locator('h3').boundingBox();
+  expect(previewHeading.x + previewHeading.width).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: testInfo.outputPath('route-preview-narrow.png') });
   await page.setViewportSize(viewport);
 
   const details = page.locator('.delivery-details');
