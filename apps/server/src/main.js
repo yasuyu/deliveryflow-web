@@ -18,6 +18,7 @@ const {
   normalizedLocation,
 } = require('./modules/location/location');
 const { nearestDrivers } = require('./modules/matching/matching');
+const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
 const {
   chooseDemoRoute,
@@ -540,12 +541,14 @@ async function dashboard(driverId) {
       acceptanceSeconds: offerTtlMilliseconds / 1000,
       scoreBreakdown: parseBreakdown(offer.scoreBreakdown),
       routeDistance: routeDistance(offer.order, driver),
+      elevationProfile: elevationProfile(offer.order, driver),
     } : null,
     assignment: assignment
       ? {
         ...assignment,
         scoreBreakdown: parseBreakdown(assignment.scoreBreakdown),
         routeDistance: routeDistance(assignment.order, driver),
+        elevationProfile: elevationProfile(assignment.order, driver, Boolean(assignment.pickedUpAt)),
       }
       : null,
     simulator: { weatherCondition: simulatedWeatherCondition },
@@ -1145,6 +1148,7 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/docs') return serveFile(response, path.join(webPublicDirectory, 'docs.html'), 'text/html; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/openapi.yaml') return serveFile(response, path.join(documentationDirectory, 'openapi.yaml'), 'text/yaml; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/route-preview.js') return serveFile(response, path.join(webPublicDirectory, 'route-preview.js'), 'application/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/elevation-profile.js') return serveFile(response, path.join(webPublicDirectory, 'elevation-profile.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/bottom-sheet.js') return serveFile(response, path.join(webPublicDirectory, 'bottom-sheet.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return serveFile(response, path.join(webPublicDirectory, 'app.js'), 'application/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/delivery-ui.js') return serveFile(response, path.join(webPublicDirectory, 'delivery-ui.js'), 'application/javascript; charset=utf-8');

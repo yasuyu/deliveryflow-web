@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.11.0
+  version: 0.12.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API
 x-websocket:
   endpoint: /api/realtime
@@ -54,7 +54,24 @@ paths:
     get:
       summary: 配達員・現在のオファー・担当配達を取得する
       responses:
-        '200': { description: 現在のダッシュボード状態。位置情報の有無と、オファーまたは担当配達の報酬、店舗・届け先の学習用座標、直線距離、固定済み見込みスコア・内訳、オファー受付秒数を返す }
+        '200':
+          description: 現在のダッシュボード状態。既存の報酬・座標・直線距離・見込みスコア・受付秒数に加え、offerまたはassignmentにelevationProfileを返す。標高はローカル計算し、端末の現在地座標は返さず、スコア加算しない。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offer:
+                    type: object
+                    nullable: true
+                    properties:
+                      elevationProfile: { $ref: '#/components/schemas/ElevationProfile' }
+                  assignment:
+                    type: object
+                    nullable: true
+                    properties:
+                      elevationProfile: { $ref: '#/components/schemas/ElevationProfile' }
+        '401': { description: Bearerトークンが不正 }
   /api/drivers/me/location:
     put:
       summary: 勤務中の配達位置をデモ位置または端末位置へ更新する
@@ -310,6 +327,35 @@ components:
         durationSeconds: { type: integer, minimum: 0, example: 5460 }
         completedDeliveries: { type: integer, minimum: 0, example: 3 }
         pointsEarned: { type: integer, minimum: 0, example: 390 }
+    ElevationProfile:
+      description: 京都中心部の参考標高。道路沿いの距離を横軸とする。地点は300m以内の接続された道路へ補正し、橋・トンネル路面や通行規制は考慮しない。現在地は保存された丸め済み座標を使用。総上昇・下降量やスコア加算は含まない。
+      oneOf:
+        - type: object
+          required: [status, stage, totalDistanceMeters, pickupDistanceMeters, minimumMeters, maximumMeters, points]
+          properties:
+            status: { type: string, enum: [AVAILABLE] }
+            stage: { type: string, enum: [VIA_PICKUP, TO_DROPOFF], description: VIA_PICKUPは現在地→店舗→配達先。TO_DROPOFFは荷物受取後の店舗→配達先。 }
+            totalDistanceMeters: { type: number, minimum: 0 }
+            pickupDistanceMeters: { type: number, minimum: 0, description: グラフ内の店舗位置。受取後は0。 }
+            minimumMeters: { type: number, description: 間引き前の全経路の最低標高 }
+            maximumMeters: { type: number, description: 間引き前の全経路の最高標高 }
+            points:
+              type: array
+              minItems: 1
+              maxItems: 200
+              description: 距離昇順。先頭・末尾・店舗と最高・最低を保持し、各区間のピークと谷を優先して間引く。
+              items:
+                type: object
+                required: [distanceMeters, elevationMeters]
+                properties:
+                  distanceMeters: { type: number, minimum: 0 }
+                  elevationMeters: { type: number }
+        - type: object
+          required: [status, stage, reason]
+          properties:
+            status: { type: string, enum: [UNAVAILABLE] }
+            stage: { type: string, enum: [VIA_PICKUP, TO_DROPOFF] }
+            reason: { type: string, enum: [LOCATION_MISSING, OUTSIDE_COVERAGE, ROUTE_NOT_FOUND, ELEVATION_MISSING] }
     ScoreSnapshot:
       type: object
       required: [estimatedPoints, scoreBreakdown]
