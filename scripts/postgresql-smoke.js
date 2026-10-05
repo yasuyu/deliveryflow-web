@@ -105,7 +105,25 @@ async function main() {
   assert.deepEqual([...history.body.deliveries, ...older.body.deliveries].map((item) => item.id), [...completedIds].reverse());
   assert.equal(older.body.deliveries[0].scoreEvent.points, offer.body.estimatedPoints);
   assert.deepEqual(older.body.deliveries[0].scoreEvent.breakdown, offer.body.scoreBreakdown);
-  assert.equal((await post('/api/shifts/end', 'pg-elevation-end')).response.status, 200);
+  const endedShift = await post('/api/shifts/end', 'pg-elevation-end');
+  assert.equal(endedShift.response.status, 200);
+  // Opt in only in isolated CI/test stacks, never incur an unintended paid API call.
+  if (process.env.EXPECTED_AI_REVIEW_STATUS) {
+    const review = () => jsonRequest('/api/shifts/review', {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shiftEndKey: 'pg-elevation-end', pointsEarned: 999999 }),
+    });
+    const results = await Promise.all([review(), review()]);
+    assert.equal(results.every((result) => result.response.status === 200), true);
+    const result = results.find((item) => item.body.status === process.env.EXPECTED_AI_REVIEW_STATUS);
+    assert.ok(result, 'AI review did not have the expected status');
+    assert.deepEqual((await review()).body, result.body);
+    if (process.env.EXPECTED_AI_REVIEW_STATUS === 'AVAILABLE') {
+      assert.match(result.body.feedback, new RegExp(`配達21件、${endedShift.body.shiftSummary.pointsEarned}ポイント`));
+      assert.match(result.body.feedback, /テスト呼出1/);
+    }
+    assert.deepEqual((await post('/api/shifts/end', 'pg-elevation-end')).body, endedShift.body);
+  }
 
   const logout = await jsonRequest('/api/logout', {
     method: 'POST',

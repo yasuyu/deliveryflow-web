@@ -1,5 +1,38 @@
 const { test, expect } = require('@playwright/test');
 
+test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実行しない', async ({ page }, testInfo) => {
+  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
+  let requests = 0;
+  const feedback = '今回の勤務、お疲れさまでした。配達0件でも、勤務の流れを確認できたことは次の学びにつながります。'.repeat(3) + '<img src=x onerror=alert(1)>';
+  await page.route('**/api/shifts/review', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.shiftEndKey).toMatch(/^[a-f0-9-]{36}$/);
+    requests += 1;
+    await route.fulfill({ json: requests === 1 ? { status: 'PENDING' } : { status: 'AVAILABLE', feedback } });
+  });
+  await page.goto('/');
+  await page.getByRole('tab', { name: '新規登録' }).click();
+  await page.locator('#registrationForm').getByLabel('配達員名').fill('AI振り返りE2E');
+  await page.locator('#registrationForm').getByLabel('ログインPIN').fill('123456');
+  await page.getByRole('button', { name: '登録して始める' }).click();
+  await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
+  await page.getByRole('button', { name: '退勤する', exact: true }).click();
+  const button = page.locator('#shiftReviewButton');
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(page.locator('#shiftReviewText')).toHaveText(feedback);
+  await expect(page.locator('#shiftReviewText img')).toHaveCount(0);
+  expect(requests).toBe(2);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.locator('#bottomSheetHandle').press('End');
+  await page.locator('#shiftReviewText').scrollIntoViewIfNeeded();
+  const box = await page.locator('.shift-review').boundingBox();
+  expect(box.x + box.width).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: testInfo.outputPath('ai-shift-review-narrow.png') });
+  await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
+  await expect(page.locator('#lastShiftSummary')).toBeHidden();
+});
+
 test('登録から配達完了、履歴確認、退勤まで進められる', async ({ page }, testInfo) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -103,6 +136,9 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.getByRole('region', { name: '今回の勤務サマリー' })).toBeVisible();
   await expect(page.locator('#shiftSummaryDeliveries')).toHaveText('1件');
   await expect(page.locator('#shiftSummaryPoints')).toHaveText(`${points} pt`);
+  await page.locator('#shiftReviewButton').click();
+  await expect(page.locator('#shiftReviewText')).toHaveText('AIの振り返りは未設定です。');
+  await expect(page.locator('#shiftReviewButton')).toBeDisabled();
   expect(pageErrors).toEqual([]);
 });
 

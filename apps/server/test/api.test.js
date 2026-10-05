@@ -110,8 +110,8 @@ async function safetyDriver() {
   return { id: registration.body.driver.id, token, post, offer: offer.body };
 }
 
-async function startServer(port) {
-  serverProcess = spawn(process.execPath, ['apps/server/src/main.js'], {
+async function startServer(port, reviewEnabled = true) {
+  serverProcess = spawn(process.execPath, ['--require', './scripts/test-support/openai-fetch.cjs', 'apps/server/src/main.js'], {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -122,6 +122,8 @@ async function startServer(port) {
       OFFER_CANDIDATE_LIMIT: '3',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
       DEMO_RANKING_SEED: 'false',
+      OPENAI_API_KEY: reviewEnabled ? 'test-only-openai-key' : '',
+      OPENAI_MODEL: 'gpt-4.1-mini',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1057,6 +1059,57 @@ test('PINを5回間違えるとログインを一時的に拒否する', async (
   });
   assert.equal(blockedLogin.status, 429);
   assert.equal(blockedLogin.body.code, 'TOO_MANY_LOGIN_ATTEMPTS');
+});
+
+test('AI振り返りは本人の確定実績だけを使い、同時送信・再起動後も生成は1回だけ', async () => {
+  const driver = await safetyDriver();
+  const key = randomUUID();
+  const review = (shiftEndKey, token = driver.token) => request('/api/shifts/review', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shiftEndKey, completedDeliveries: 999, pointsEarned: 999999 }),
+  });
+  assert.equal((await request('/api/shifts/review', { method: 'POST' })).status, 401);
+  assert.equal((await review('not-ended')).status, 404);
+  assert.equal((await review('')).status, 400);
+  const ended = await driver.post('/api/shifts/end', key);
+  assert.equal(ended.status, 200);
+  assert.equal((await review(key, accessToken)).status, 404);
+  const results = await Promise.all([review(key), review(key)]);
+  const available = results.find((result) => result.body.status === 'AVAILABLE');
+  assert.ok(available);
+  assert.match(available.body.feedback, /配達0件、0ポイント/);
+  assert.match(available.body.feedback, /テスト呼出1/);
+  assert.equal(results.every((result) => result.status === 200), true);
+  assert.equal(JSON.stringify(results).includes('test-only-openai-key'), false);
+  assert.deepEqual((await review(key)).body, available.body);
+  assert.deepEqual((await driver.post('/api/shifts/end', key)).body, ended.body);
+
+  const port = Number(new URL(baseUrl).port);
+  serverProcess.kill();
+  await once(serverProcess, 'exit');
+  await startServer(port);
+  assert.deepEqual((await review(key)).body, available.body);
+  // Simulate a process stopping after committing the claim, before saving the response.
+  const db = new DatabaseSync(databasePath);
+  db.prepare('UPDATE "IdempotencyKey" SET response = ?, createdAt = ? WHERE key = ? AND endpoint = ?')
+    .run(JSON.stringify({ status: 'PENDING' }), Date.now() - 60_000, key, '/api/shifts/review');
+  db.close();
+  assert.equal((await review(key)).body.status, 'UNAVAILABLE');
+  assert.equal((await review(key)).body.status, 'UNAVAILABLE');
+
+  serverProcess.kill();
+  await once(serverProcess, 'exit');
+  await startServer(port, false);
+  try {
+    const unconfiguredDriver = await safetyDriver();
+    const disabledKey = randomUUID();
+    await unconfiguredDriver.post('/api/shifts/end', disabledKey);
+    assert.equal((await review(disabledKey, unconfiguredDriver.token)).body.status, 'DISABLED');
+  } finally {
+    serverProcess.kill();
+    await once(serverProcess, 'exit');
+    await startServer(port);
+  }
 });
 
 test('雨天ボーナスの見込みと完了後の内訳を固定し二重加点しない', async () => {

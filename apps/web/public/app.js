@@ -70,6 +70,8 @@ const lastShiftSummary = document.querySelector('#lastShiftSummary');
 const shiftSummaryDuration = document.querySelector('#shiftSummaryDuration');
 const shiftSummaryDeliveries = document.querySelector('#shiftSummaryDeliveries');
 const shiftSummaryPoints = document.querySelector('#shiftSummaryPoints');
+const shiftReviewText = document.querySelector('#shiftReviewText');
+const shiftReviewButton = document.querySelector('#shiftReviewButton');
 const deliveryMap = DeliveryFlowMap.create({
   canvas: document.querySelector('#deliveryMap'),
   sheet: bottomSheet,
@@ -861,6 +863,7 @@ function render() {
     shiftSummaryDuration.textContent = DeliveryFlowUi.formatShiftDuration(completedShiftSummary.durationSeconds);
     shiftSummaryDeliveries.textContent = `${completedShiftSummary.completedDeliveries}件`;
     shiftSummaryPoints.textContent = `${completedShiftSummary.pointsEarned} pt`;
+    renderShiftReview();
   }
   if (!nextDeliveryKey) {
     displayedOrder = null;
@@ -1186,8 +1189,10 @@ async function handleAction(event) {
       currentBrowserLocation = demoResult.coordinates;
     }
     if (action === 'end') {
-      actionResult = await request('/api/shifts/end');
+      const shiftEndKey = crypto.randomUUID();
+      actionResult = await request('/api/shifts/end', null, { idempotencyKey: shiftEndKey });
       completedShiftSummary = actionResult.shiftSummary || null;
+      if (completedShiftSummary) completedShiftSummary.shiftEndKey = shiftEndKey;
     }
     if (action === 'offer') await request('/api/offers/current');
     if (action === 'logout') {
@@ -1245,6 +1250,38 @@ async function handleAction(event) {
   }
 }
 actions.addEventListener('click', handleAction);
+function renderShiftReview() {
+  const review = completedShiftSummary?.aiReview;
+  shiftReviewText.textContent = review?.feedback || review?.message
+    || '勤務時間・配達件数・ポイントをOpenAIへ送り、約200文字の振り返りを生成します。';
+  shiftReviewButton.disabled = ['PENDING', 'AVAILABLE', 'DISABLED', 'UNAVAILABLE'].includes(review?.status);
+  shiftReviewButton.textContent = review?.status === 'PENDING' ? '振り返りを生成中…' : 'AIで振り返る';
+}
+
+shiftReviewButton.addEventListener('click', async () => {
+  const summary = completedShiftSummary;
+  if (!summary?.shiftEndKey || shiftReviewButton.disabled || isLoading) return;
+  const token = driverToken;
+  summary.aiReview = { status: 'PENDING', message: '振り返りを生成しています…' };
+  renderShiftReview();
+  try {
+    // Polling retrieves the saved result; it never starts a second OpenAI call.
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      if (summary !== completedShiftSummary || token !== driverToken) return;
+      const review = await request('/api/shifts/review', { shiftEndKey: summary.shiftEndKey });
+      if (summary !== completedShiftSummary || token !== driverToken) return;
+      summary.aiReview = review.status === 'PENDING'
+        ? { ...review, message: '振り返りを生成しています…' } : review;
+      renderShiftReview();
+      if (review.status !== 'PENDING') return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    summary.aiReview = { message: '結果の取得を中断しました。ボタンで保存済みの結果を確認できます。' };
+  } catch {
+    summary.aiReview = { message: 'サーバーへ接続できませんでした。ボタンで結果を確認できます。勤務実績は記録済みです。' };
+  }
+  if (summary === completedShiftSummary && token === driverToken) renderShiftReview();
+});
 logoutButton.addEventListener('click', handleAction);
 offlineQueueStatus.addEventListener('click', async (event) => {
   const queueAction = event.target.closest('button[data-queue-action]')?.dataset.queueAction;
