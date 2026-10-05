@@ -58,7 +58,8 @@
           : { label: 'この配達を受諾する', action: `accept:${id}` },
         secondary: expired ? [] : [
           { label: '辞退する', action: `reject:${id}` },
-          { label: '辞退して退勤', action: 'end' },
+          { label: '辞退して退勤', action: 'end',
+            confirmation: 'このオファーを辞退して退勤しますか？\n退勤すると、新しいオファーの受付も終了します。' },
         ],
       };
     }
@@ -88,7 +89,7 @@
   }
 
   function renderActions(view, { loading = false } = {}) {
-    const button = (item, primary = false) => `<button type="button" class="${primary ? 'action-primary' : 'button-secondary'}" data-action="${escapeHtml(item.action)}"${loading ? ' disabled' : ''}>${escapeHtml(item.label)}</button>`;
+    const button = (item, primary = false) => `<button type="button" class="${primary ? 'action-primary' : 'button-secondary'}" data-action="${escapeHtml(item.action)}"${item.confirmation ? ` data-confirm="${escapeHtml(item.confirmation)}"` : ''}${loading ? ' disabled' : ''}>${escapeHtml(item.label)}</button>`;
     return button(view.primary, true) + (view.secondary.length
       ? `<div class="action-secondary">${view.secondary.map((item) => button(item)).join('')}</div>` : '');
   }
