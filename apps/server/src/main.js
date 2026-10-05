@@ -20,6 +20,8 @@ const {
 const { nearestDrivers } = require('./modules/matching/matching');
 const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
+const { createShiftFeedback, unavailableReview } = require('./modules/shift-review/shift-review');
+const shiftFeedback = createShiftFeedback();
 const {
   chooseDemoRoute,
   demoDropoffs,
@@ -959,6 +961,47 @@ async function endShift(driver, client) {
   };
 }
 
+async function reviewShift(driver, shiftEndKey) {
+  if (typeof shiftEndKey !== 'string' || !shiftEndKey.trim() || shiftEndKey.length > 200) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '退勤時のshiftEndKeyを指定してください');
+  }
+  const key = shiftEndKey.trim();
+  const identity = { key_endpoint_driverId: { key, endpoint: '/api/shifts/review', driverId: driver.id } };
+  const claim = await databaseTransaction(async (client) => {
+    const current = await client.driver.findUnique({ where: { id: driver.id } });
+    if (!current || current.accessTokenHash !== driver.accessTokenHash) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'ログインし直してください');
+    }
+    const ended = await client.idempotencyKey.findUnique({
+      where: { key_endpoint_driverId: { key, endpoint: '/api/shifts/end', driverId: driver.id } },
+    });
+    const summary = ended?.statusCode === 200 && ended.response ? JSON.parse(ended.response).shiftSummary : null;
+    if (!summary) throw new ApiError(404, 'SHIFT_SUMMARY_NOT_FOUND', '確定した勤務サマリーが見つかりません');
+    const previous = await client.idempotencyKey.findUnique({ where: identity });
+    if (previous) {
+      const review = previous.response ? JSON.parse(previous.response) : { status: 'UNAVAILABLE', ...unavailableReview };
+      // A restart during the outbound call must not cause another paid request.
+      if (review.status === 'PENDING' && Date.now() - previous.createdAt.getTime() > 30_000) {
+        await client.idempotencyKey.update({ where: identity, data: { response: JSON.stringify(unavailableReview) } });
+        return { review: { ...unavailableReview } };
+      }
+      return { review };
+    }
+    if (!shiftFeedback.configured) return { review: { status: 'DISABLED', message: 'AIの振り返りは未設定です。' } };
+    await client.idempotencyKey.create({
+      data: { key, endpoint: '/api/shifts/review', driverId: driver.id, statusCode: 200, response: JSON.stringify({ status: 'PENDING' }) },
+    });
+    return { summary };
+  });
+  if (claim.review) return claim.review;
+  // Commit the claim before calling OpenAI; never hold a DB transaction over the network.
+  const review = await shiftFeedback.generate(claim.summary);
+  await databaseTransaction((client) => client.idempotencyKey.update({
+    where: identity, data: { response: JSON.stringify(review) },
+  }));
+  return review;
+}
+
 async function updateDriverLocation(driver, location, client) {
   if (driver.status === 'OFFLINE') {
     throw new ApiError(409, 'INVALID_STATE_TRANSITION', '現在地は勤務中のみ更新できます');
@@ -1272,6 +1315,11 @@ async function handle(request, response) {
   const driver = await authenticateDriver(request);
   if (request.method === 'GET' && url.pathname === '/api/dashboard') {
     return json(response, 200, await dashboard(driver.id));
+  }
+  if (request.method === 'POST' && url.pathname === '/api/shifts/review') {
+    const { shiftEndKey } = await readJsonBody(request);
+    response.setHeader('Cache-Control', 'no-store');
+    return json(response, 200, await reviewShift(driver, shiftEndKey));
   }
   if (request.method === 'GET' && url.pathname === '/api/deliveries/history') {
     return json(response, 200, await deliveryHistory(driver.id, url.searchParams));

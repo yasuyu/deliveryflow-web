@@ -110,6 +110,11 @@
             <p><span>稼働時間</span><strong id="shiftSummaryDuration">0分</strong></p>
             <p><span>完了した配達</span><strong id="shiftSummaryDeliveries">0件</strong></p>
             <p><span>獲得ポイント</span><strong id="shiftSummaryPoints">0 pt</strong></p>
+            <div class="shift-review" aria-label="AIの勤務振り返り">
+              <h3>AIの振り返り</h3>
+              <p id="shiftReviewText" aria-live="polite">勤務時間・配達件数・ポイントをOpenAIへ送り、約200文字の振り返りを生成します。</p>
+              <button id="shiftReviewButton" type="button" class="button-secondary">AIで振り返る</button>
+            </div>
           </section>
           <button type="button" class="button-secondary" data-open-settings>現在地・天候の設定</button>
         </section>

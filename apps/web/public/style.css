@@ -122,6 +122,10 @@ body:has(#workflow:not(.hidden)) .app-header { position: relative; z-index: 3; h
 .delivery-empty button { margin-top: 18px; }
 .delivery-empty .shift-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 510px; margin-top: 20px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .delivery-empty .shift-summary.hidden { display: none; }
+.shift-review { grid-column: 1 / -1; text-align: left; border-top: 1px solid var(--line); padding-top: 12px; }
+.shift-review h3 { margin: 0 0 8px; font-size: 15px; }
+.delivery-empty .shift-review p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
+.shift-review button { margin-top: 12px; }
 .delivery-empty .shift-summary p { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .shift-summary span, .shift-summary strong { display: block; }
 .delivery-empty .shift-summary strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--ink); font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.35; }

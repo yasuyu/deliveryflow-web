@@ -101,6 +101,7 @@ jobs:
       - name: Verify the running PostgreSQL API
         env:
           BASE_URL: http://127.0.0.1:3106
+          EXPECTED_AI_REVIEW_STATUS: DISABLED
         run: npm run test:postgresql-smoke
 
       - name: Show container logs on failure

@@ -198,6 +198,29 @@ paths:
                 properties:
                   shiftSummary: { $ref: '#/components/schemas/ShiftSummary' }
         '409': { description: 配達中・退勤中、または同時操作で状態が変わったため退勤不可 }
+  /api/shifts/review:
+    post:
+      summary: 確定した勤務サマリーから約200文字のAI振り返りを生成する
+      description: 本人の退勤APIのIdempotency-KeyをshiftEndKeyに指定する。DBの確定値だけを使用し、同じ勤務の同時送信・再送・再起動後もOpenAI呼出は最大1回。結果は保存して再返却する。失敗後の再生成はしない。キー未設定なら外部通信しない。勤務時間・件数・ポイントだけをOpenAIへ送信し、氏名・座標は送らない。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shiftEndKey]
+              properties:
+                shiftEndKey: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200':
+          description: 生成結果、生成中、未設定、または生成失敗。PENDINGは同じshiftEndKeyで再取得でき、30秒以上経過した中断処理はUNAVAILABLEに確定する。
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShiftReview' }
+        '400': { description: shiftEndKeyが不正 }
+        '401': { description: Bearerトークンが不正 }
+        '404': { description: 本人の確定した勤務サマリーが存在しない }
+        '409': { description: 同時操作の競合。保存済みの結果は再取得可能 }
   /api/offers/current:
     post:
       summary: 現在のオファーを確認する IDLE to OFFERED
@@ -350,6 +373,13 @@ components:
         durationSeconds: { type: integer, minimum: 0, example: 5460 }
         completedDeliveries: { type: integer, minimum: 0, example: 3 }
         pointsEarned: { type: integer, minimum: 0, example: 390 }
+    ShiftReview:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [AVAILABLE, PENDING, DISABLED, UNAVAILABLE] }
+        feedback: { type: string, maxLength: 240, description: AVAILABLE時の日本語フィードバック。180〜220文字を指示し、最大240文字に制限する。 }
+        message: { type: string, description: 未設定または生成失敗時の案内 }
     ElevationProfile:
       description: 京都中心部の参考標高。道路沿いの距離を横軸とする。地点は300m以内の接続された道路へ補正し、橋・トンネル路面や通行規制は考慮しない。現在地は保存された丸め済み座標を使用。総上昇・下降量やスコア加算は含まない。
       oneOf:
