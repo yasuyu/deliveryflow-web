@@ -1154,8 +1154,10 @@ loginForm.addEventListener('submit', async (event) => {
 });
 
 async function handleAction(event) {
-  const action = event.target.closest('button[data-action]')?.dataset.action;
+  const button = event.target.closest('button[data-action]');
+  const action = button?.dataset.action;
   if (!action || isLoading) return;
+  if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) return;
   if (action.startsWith('accept:') && DeliveryFlowUi.getActionView(state).expired) {
     renderActionDock();
     setMessage('オファーの期限が切れました。最新の状況を確認してください。', 'error');

@@ -60,6 +60,19 @@ test('オファーの残り時間を30秒のバーへ変換する', () => {
   assert.equal(offerCountdown(null, now), null);
 });
 
+test('辞退して退勤だけに確認を付け、通常の辞退・受諾・待機中の退勤には付けない', () => {
+  const view = getActionView(offered(), now);
+  assert.equal(view.primary.confirmation, undefined);
+  assert.equal(view.secondary[0].confirmation, undefined);
+  assert.match(view.secondary[1].confirmation, /このオファーを辞退して退勤しますか/);
+  assert.match(view.secondary[1].confirmation, /新しいオファーの受付も終了/);
+  const markup = renderActions(view);
+  assert.equal((markup.match(/data-confirm=/g) || []).length, 1);
+  assert.match(markup, /data-action="end" data-confirm=/);
+  const idle = getActionView({ driver: { status: 'IDLE' } }, now);
+  assert.doesNotMatch(renderActions(idle), /data-confirm=/);
+});
+
 test('オファーの期限ちょうどから受諾を最新状況の確認に置き換える', () => {
   const state = offered();
   const deadline = Date.parse(state.offer.expiresAt);
@@ -141,11 +154,12 @@ test('表示文字と操作属性に含まれるHTMLをエスケープする', (
   assert.equal(escapeHtml(malicious), escaped);
   const markup = renderActions({
     primary: { label: malicious, action: malicious },
-    secondary: [{ label: malicious, action: malicious }],
+    secondary: [{ label: malicious, action: malicious, confirmation: malicious }],
   });
   assert.equal((markup.match(/<button /g) || []).length, 2);
   assert.doesNotMatch(markup, /<img/);
   assert.ok(markup.includes(`data-action="${escaped}"`));
+  assert.ok(markup.includes(`data-confirm="${escaped}"`));
   assert.ok(markup.includes(`>${escaped}</button>`));
 
   const state = offered();

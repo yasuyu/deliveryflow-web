@@ -105,3 +105,85 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.locator('#shiftSummaryPoints')).toHaveText(`${points} pt`);
   expect(pageErrors).toEqual([]);
 });
+
+test('スコアの期間を明示し、辞退して退勤は確認後だけ実行する', async ({ page, request }, testInfo) => {
+  await page.route('https://tile.openstreetmap.org/**', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64'),
+  }));
+  await page.goto('/');
+  await page.getByRole('tab', { name: '新規登録' }).click();
+  const registration = page.locator('#registrationForm');
+  await registration.getByLabel('配達員名').fill('UI確認配達員');
+  await registration.getByLabel('ログインPIN').fill('123456');
+  await registration.getByRole('button', { name: '登録して始める' }).click();
+  await expect(page.locator('#driverStatus')).toHaveText('退勤中');
+  const score = page.locator('.ride-score');
+  await expect(score.locator('span').first()).toHaveText('14日間0');
+  await score.click();
+  await expect(page.locator('.score-summary p').first()).toContainText('14日間のスコア');
+  await page.getByRole('button', { name: '配達画面に戻る', exact: true }).click();
+  await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
+  await page.getByRole('button', { name: 'オファーを確認する', exact: true }).click();
+  await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
+
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 320, height: 640 });
+  const scoreBounds = await score.boundingBox();
+  const statusBounds = await page.locator('.ride-status__text').boundingBox();
+  const menuBounds = await page.locator('.ride-menu').boundingBox();
+  expect(scoreBounds.x).toBeGreaterThanOrEqual(statusBounds.x + statusBounds.width);
+  expect(scoreBounds.x + scoreBounds.width).toBeLessThanOrEqual(menuBounds.x);
+  expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: testInfo.outputPath('score-period-narrow.png') });
+  await page.setViewportSize(viewport);
+
+  const sent = [];
+  page.on('request', (outgoing) => {
+    if (outgoing.method() === 'POST') sent.push(new URL(outgoing.url()).pathname);
+  });
+  const end = page.getByRole('button', { name: '辞退して退勤', exact: true });
+  const cancellation = page.waitForEvent('dialog');
+  const cancelClick = end.click();
+  const cancelDialog = await cancellation;
+  expect(cancelDialog.type()).toBe('confirm');
+  expect(cancelDialog.message()).toContain('このオファーを辞退して退勤しますか？');
+  expect(cancelDialog.message()).toContain('新しいオファーの受付も終了');
+  await cancelDialog.dismiss();
+  await cancelClick;
+  expect(sent).not.toContain('/api/shifts/end');
+  await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
+  await expect(page.getByRole('button', { name: 'この配達を受諾する', exact: true })).toBeEnabled();
+  const accessToken = await page.evaluate(() => localStorage.getItem('deliveryFlowAccessToken'));
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const unchanged = await request.get('/api/dashboard', { headers });
+  const unchangedBody = await unchanged.json();
+  expect(unchangedBody.driver.status).toBe('OFFERED');
+  expect(unchangedBody.offer.status).toBe('PENDING');
+
+  let unexpectedDialogs = 0;
+  const dismissUnexpected = (dialog) => { unexpectedDialogs += 1; return dialog.dismiss(); };
+  page.on('dialog', dismissUnexpected);
+  await page.getByRole('button', { name: '辞退する', exact: true }).click();
+  await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'IDLE');
+  page.off('dialog', dismissUnexpected);
+  expect(unexpectedDialogs).toBe(0);
+  expect(sent.some((pathname) => /\/offers\/\d+\/reject$/.test(pathname))).toBe(true);
+  expect(sent).not.toContain('/api/shifts/end');
+
+  await page.getByRole('button', { name: 'オファーを確認する', exact: true }).click();
+  await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
+  await page.screenshot({ path: testInfo.outputPath('score-period-and-shift-confirm.png') });
+  const confirmation = page.waitForEvent('dialog');
+  const confirmClick = end.click();
+  const confirmDialog = await confirmation;
+  expect(confirmDialog.type()).toBe('confirm');
+  await confirmDialog.accept();
+  await confirmClick;
+  await expect(page.locator('#driverStatus')).toHaveText('退勤中');
+  expect(sent.filter((pathname) => pathname === '/api/shifts/end')).toHaveLength(1);
+  const ended = await request.get('/api/dashboard', { headers });
+  const endedBody = await ended.json();
+  expect(endedBody.driver.status).toBe('OFFLINE');
+  expect(endedBody.offer).toBeNull();
+});
