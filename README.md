@@ -278,6 +278,25 @@ docker build -f apps/server/Dockerfile -t deliveryflow-web .
 docker run --rm -p 3000:3000 -v deliveryflow-data:/data deliveryflow-web
 ```
 
+### PostgreSQL版の開発を再開する
+
+VS Codeでは最新コードを同期したリポジトリのフォルダーを開き、そのフォルダーのターミナルから実行します。
+
+```powershell
+npm run dev:postgres
+```
+
+起動時にイメージをビルドし、その後のコード変更をCompose Watchで反映します。別の作業フォルダーから同じComposeプロジェクトを起動すると、そのフォルダーのコードで既存アプリが再作成されます。古いフォルダーの監視は`Ctrl+C`で終了し、起動元を統一してください。
+
+監視を停止した状態で、DBを残してアプリだけを最新コードへ戻す場合は、最新リポジトリのターミナルで次を実行します。`Ctrl+C`でDBも停止していた場合は、先に既存DBを`start db`で起動します。
+
+```powershell
+docker compose --env-file .env.postgres start db
+docker compose --env-file .env.postgres up --build --no-deps --force-recreate -d --wait app
+```
+
+このコマンドは起動中のDBコンテナとボリュームを再作成しません。既存環境と同じ`COMPOSE_PROJECT_NAME`を使います。
+
 ## テストとCI
 
 ```powershell
