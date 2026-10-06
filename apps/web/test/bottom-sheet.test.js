@@ -67,8 +67,15 @@ test('上下操作は範囲外へ進まない', () => {
 test('拡大されたスマートフォンでも表示領域の中央を返す', () => {
   assert.deepEqual(
     visualViewportLayout({ width: 320, offsetLeft: 24 }, 390),
-    { width: 320, centerX: 184 },
+    { width: 320, centerX: 184, offsetTop: 0 },
   );
-  assert.deepEqual(visualViewportLayout(null, 390), { width: 390, centerX: 195 });
+  assert.deepEqual(visualViewportLayout(null, 390), { width: 390, centerX: 195, offsetTop: 0 });
+});
+
+test('キーボードや拡大で上下にずれた表示領域の上端を返す', () => {
+  assert.equal(visualViewportLayout({ width: 320, offsetTop: 160 }, 390).offsetTop, 160);
+  for (const offsetTop of [undefined, -20, 'invalid']) {
+    assert.equal(visualViewportLayout({ width: 320, offsetTop }, 390).offsetTop, 0);
+  }
 });
 

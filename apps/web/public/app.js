@@ -139,6 +139,7 @@ function syncVisualViewportLayout() {
   const layout = DeliveryFlowBottomSheet.visualViewportLayout(window.visualViewport, window.innerWidth);
   workflow.style.setProperty('--visual-viewport-width', `${layout.width}px`);
   workflow.style.setProperty('--visual-viewport-center-x', `${layout.centerX}px`);
+  workflow.style.setProperty('--visual-viewport-offset-top', `${layout.offsetTop}px`);
 }
 
 function bottomSheetSnapHeights() {
