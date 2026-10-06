@@ -17,6 +17,9 @@ test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実�
   await page.getByRole('button', { name: '登録して始める' }).click();
   await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
   await page.getByRole('button', { name: '退勤する', exact: true }).click();
+  await expect(page.locator('#bottomSheet')).toHaveAttribute('data-sheet-state', 'expanded');
+  await expect(page.locator('#shiftSummaryDeliveries')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#shiftReviewButton')).toBeInViewport({ ratio: 1 });
   const button = page.locator('#shiftReviewButton');
   await button.click();
   await expect(button).toBeDisabled();
@@ -132,7 +135,9 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.locator('#mapLifetimeScore')).toHaveText(String(points));
   await page.getByRole('button', { name: '退勤する', exact: true }).click();
   await expect(page.locator('#driverStatus')).toHaveText('退勤中');
-  await page.locator('#bottomSheetHandle').press('End');
+  await expect(page.locator('#bottomSheet')).toHaveAttribute('data-sheet-state', 'expanded');
+  await expect(page.locator('#shiftSummaryDeliveries')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#shiftReviewButton')).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole('region', { name: '今回の勤務サマリー' })).toBeVisible();
   await expect(page.locator('#shiftSummaryDeliveries')).toHaveText('1件');
   await expect(page.locator('#shiftSummaryPoints')).toHaveText(`${points} pt`);
@@ -210,6 +215,7 @@ test('スコアの期間を明示し、辞退して退勤は確認後だけ実�
   await page.getByRole('button', { name: 'オファーを確認する', exact: true }).click();
   await expect(page.locator('#driverStatus')).toHaveAttribute('data-status', 'OFFERED');
   await page.screenshot({ path: testInfo.outputPath('score-period-and-shift-confirm.png') });
+  await page.setViewportSize({ width: 320, height: 568 });
   const confirmation = page.waitForEvent('dialog');
   const confirmClick = end.click();
   const confirmDialog = await confirmation;
@@ -217,6 +223,11 @@ test('スコアの期間を明示し、辞退して退勤は確認後だけ実�
   await confirmDialog.accept();
   await confirmClick;
   await expect(page.locator('#driverStatus')).toHaveText('退勤中');
+  await expect(page.locator('#bottomSheet')).toHaveAttribute('data-sheet-state', 'expanded');
+  await expect(page.locator('#shiftSummaryDeliveries')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#shiftSummaryPoints')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#shiftReviewButton')).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: testInfo.outputPath('shift-summary-short-screen.png') });
   expect(sent.filter((pathname) => pathname === '/api/shifts/end')).toHaveLength(1);
   const ended = await request.get('/api/dashboard', { headers });
   const endedBody = await ended.json();
