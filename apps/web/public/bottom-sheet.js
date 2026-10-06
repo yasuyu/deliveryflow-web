@@ -29,7 +29,8 @@
     const width = Math.max(0, Number(viewport?.width) || fallback);
     const offsetLeft = Number.isFinite(Number(viewport?.offsetLeft))
       ? Number(viewport.offsetLeft) : 0;
-    return { width, centerX: offsetLeft + (width / 2) };
+    const offsetTop = Math.max(0, Number(viewport?.offsetTop) || 0);
+    return { width, centerX: offsetLeft + (width / 2), offsetTop };
   }
 
   function nearestState(height, snapHeights) {
