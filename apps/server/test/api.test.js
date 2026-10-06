@@ -1026,6 +1026,8 @@ test('退勤時に今回の勤務時間、配達件数、獲得ポイントを�
   assert.equal(ended.body.status, 'OFFLINE');
   assert.equal(ended.body.shiftSummary.completedDeliveries, 1);
   assert.equal(ended.body.shiftSummary.pointsEarned, completed.body.scoreAward.points);
+  assert.match(ended.body.shiftSummary.localFeedback, /完了した配達は1件/);
+  assert.ok(ended.body.shiftSummary.localFeedback.includes(`${completed.body.scoreAward.points}ポイント`));
   assert.equal(Number.isInteger(ended.body.shiftSummary.durationSeconds), true);
   assert.equal(ended.body.shiftSummary.durationSeconds >= 0, true);
   assert.equal(Date.parse(ended.body.shiftSummary.startedAt) <= Date.parse(ended.body.shiftSummary.endedAt), true);
@@ -1103,7 +1105,9 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
   try {
     const unconfiguredDriver = await safetyDriver();
     const disabledKey = randomUUID();
-    await unconfiguredDriver.post('/api/shifts/end', disabledKey);
+    const freeSummary = await unconfiguredDriver.post('/api/shifts/end', disabledKey);
+    assert.match(freeSummary.body.shiftSummary.localFeedback, /完了した配達は0件/);
+    assert.deepEqual((await unconfiguredDriver.post('/api/shifts/end', disabledKey)).body, freeSummary.body);
     assert.equal((await review(disabledKey, unconfiguredDriver.token)).body.status, 'DISABLED');
   } finally {
     serverProcess.kill();

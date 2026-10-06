@@ -184,7 +184,7 @@ paths:
   /api/shifts/end:
     post:
       summary: 退勤する IDLEまたはOFFEREDからOFFLINE
-      description: 今回の勤務を集計し、OFFEREDの場合は保留中のOfferをREJECTEDにして、保存中の現在地を削除してから退勤する
+      description: 今回の勤務を集計し、外部通信しない無料の定型振り返りをlocalFeedbackに含める。OFFEREDの場合は保留中のOfferをREJECTEDにして、保存中の現在地を削除してから退勤する
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -373,6 +373,7 @@ components:
         durationSeconds: { type: integer, minimum: 0, example: 5460 }
         completedDeliveries: { type: integer, minimum: 0, example: 3 }
         pointsEarned: { type: integer, minimum: 0, example: 390 }
+        localFeedback: { type: string, description: 確定した勤務実績から作成する無料の定型コメント。外部通信・AI生成なし。旧版で保存した再送応答には含まれない場合がある。 }
     ShiftReview:
       type: object
       required: [status]

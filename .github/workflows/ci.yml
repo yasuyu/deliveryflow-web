@@ -104,6 +104,9 @@ jobs:
           EXPECTED_AI_REVIEW_STATUS: DISABLED
         run: npm run test:postgresql-smoke
 
+      - name: Verify PostgreSQL backup and restore into a new database
+        run: npm run test:backup:postgres -- --env-file .env.postgres.example
+
       - name: Show container logs on failure
         if: failure()
         run: docker compose --env-file .env.postgres.example logs --no-color

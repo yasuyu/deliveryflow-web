@@ -1,11 +1,29 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { createShiftFeedback } = require('../src/modules/shift-review/shift-review');
+const { createShiftFeedback, createLocalShiftFeedback } = require('../src/modules/shift-review/shift-review');
 const summary = { durationSeconds: 5460, completedDeliveries: 3, pointsEarned: 390, name: '送信しない氏名', latitude: 35 };
 const completed = (text) => ({ status: 'completed', output: [
   { type: 'reasoning' },
   { type: 'message', content: [{ type: 'output_text', text }] },
 ] });
+
+test('無料の定型振り返りは実績に触れ、0件・短い勤務・長い勤務を扱う', () => {
+  const empty = createLocalShiftFeedback({ durationSeconds: 0, completedDeliveries: 0, pointsEarned: 0 });
+  assert.match(empty, /1分未満/);
+  assert.match(empty, /配達は0件/);
+  assert.match(empty, /0ポイント/);
+  assert.match(empty, /開始から退勤まで/);
+  const regular = createLocalShiftFeedback(summary);
+  assert.match(regular, /1時間31分/);
+  assert.match(regular, /配達は3件/);
+  assert.match(regular, /390ポイント/);
+  assert.equal(regular.includes(summary.name), false);
+  assert.ok(Array.from(regular).length >= 180 && Array.from(regular).length <= 240);
+  const long = createLocalShiftFeedback({ ...summary, durationSeconds: 7200 });
+  assert.match(long, /2時間0分/);
+  assert.match(long, /休憩/);
+  assert.equal(long, createLocalShiftFeedback({ ...summary, durationSeconds: 7200 }));
+});
 
 test('Responses APIへ集計値だけを送り、サーバー側キーと出力上限を使用する', async () => {
   let captured;
