@@ -38,8 +38,9 @@ test('初回ログイン・再読み込み・表示領域の移動後も勤務�
         && bounds.right <= viewport.offsetLeft + viewport.width;
     })).toBe(true);
     for (const selector of ['#driverStatus', '.ride-score', '.ride-menu']) {
-      await expect(page.locator(selector)).toBeInViewport({ ratio: 1 });
-      expect(await page.locator(selector).evaluate((element) => {
+      // WebKit can round the intersection ratio just below 1 at fractional pixels.
+      await expect(page.locator(selector)).toBeInViewport({ ratio: 0.999 });
+      await expect.poll(() => page.locator(selector).evaluate((element) => {
         const bounds = element.getBoundingClientRect();
         return element.contains(document.elementFromPoint(
           bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
