@@ -1230,7 +1230,10 @@ async function handleAction(event) {
     await refresh({ preserveMessage: true });
     if (action === 'end' && completedShiftSummary) {
       setSheetView('delivery');
-      setBottomSheetState('medium');
+      setBottomSheetState('expanded');
+      // Keep the summary above the fixed action dock, even on short screens.
+      sheetContent.scrollTop += lastShiftSummary.getBoundingClientRect().top
+        - sheetContent.getBoundingClientRect().top;
     }
     if (['offer', 'accept', 'pickup', 'complete'].includes(action.split(':')[0])) {
       setSheetView('delivery');
