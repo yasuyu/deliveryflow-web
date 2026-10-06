@@ -29,7 +29,7 @@ test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実�
   await page.setViewportSize({ width: 320, height: 640 });
   await page.locator('#bottomSheetHandle').press('End');
   await page.locator('#shiftReviewText').scrollIntoViewIfNeeded();
-  const box = await page.locator('.shift-review').boundingBox();
+  const box = await page.locator('.shift-review[aria-label="AIの勤務振り返り"]').boundingBox();
   expect(box.x + box.width).toBeLessThanOrEqual(320);
   await page.screenshot({ path: testInfo.outputPath('ai-shift-review-narrow.png') });
   await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
@@ -141,9 +141,15 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.getByRole('region', { name: '今回の勤務サマリー' })).toBeVisible();
   await expect(page.locator('#shiftSummaryDeliveries')).toHaveText('1件');
   await expect(page.locator('#shiftSummaryPoints')).toHaveText(`${points} pt`);
+  await expect(page.locator('#localShiftFeedback')).toContainText('完了した配達は1件');
+  await expect(page.locator('#localShiftFeedback')).toContainText(`${points}ポイント`);
   await page.locator('#shiftReviewButton').click();
   await expect(page.locator('#shiftReviewText')).toHaveText('AIの振り返りは未設定です。');
   await expect(page.locator('#shiftReviewButton')).toBeDisabled();
+  await page.locator('#localShiftFeedback').scrollIntoViewIfNeeded();
+  await expect(page.locator('#localShiftFeedback')).toBeInViewport({ ratio: 0.999 });
+  await expect(page.getByText('無料の振り返り', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('free-shift-review.png') });
   expect(pageErrors).toEqual([]);
 });
 

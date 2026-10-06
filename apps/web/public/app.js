@@ -72,6 +72,7 @@ const shiftSummaryDeliveries = document.querySelector('#shiftSummaryDeliveries')
 const shiftSummaryPoints = document.querySelector('#shiftSummaryPoints');
 const shiftReviewText = document.querySelector('#shiftReviewText');
 const shiftReviewButton = document.querySelector('#shiftReviewButton');
+const localShiftFeedback = document.querySelector('#localShiftFeedback');
 const deliveryMap = DeliveryFlowMap.create({
   canvas: document.querySelector('#deliveryMap'),
   sheet: bottomSheet,
@@ -124,6 +125,7 @@ let lastRealtimeSequence = -1;
 let realtimeRefreshQueued = false;
 let lastSuccessfulRefreshAt = 0;
 let pageIsUnloading = false;
+let pageResumeTimer = null;
 let refreshPromise = null;
 let offlineQueue = [];
 let offlineQueueFlushing = false;
@@ -437,7 +439,7 @@ function queueRealtimeRefresh() {
 }
 
 function scheduleRealtimeReconnect() {
-  if (!driverToken || pageIsUnloading || realtimeReconnectTimer) return;
+  if (!driverToken || pageIsUnloading || document.hidden || !navigator.onLine || realtimeReconnectTimer) return;
   const delay = Math.min(30_000, 1_000 * (2 ** realtimeReconnectAttempt));
   realtimeReconnectAttempt += 1;
   setRealtimeStatus('fallback');
@@ -457,7 +459,7 @@ function disconnectRealtime() {
 }
 
 function connectRealtime() {
-  if (!driverToken || pageIsUnloading) return;
+  if (!driverToken || pageIsUnloading || document.hidden || !navigator.onLine) return;
   if (realtimeSocket && realtimeSocket.readyState <= WebSocket.OPEN) return;
 
   setRealtimeStatus('connecting');
@@ -471,6 +473,7 @@ function connectRealtime() {
     if (socket !== realtimeSocket) return;
     realtimeReconnectAttempt = 0;
     setRealtimeStatus('connected');
+    queueRealtimeRefresh();
   });
 
   socket.addEventListener('message', (event) => {
@@ -864,6 +867,8 @@ function render() {
     shiftSummaryDuration.textContent = DeliveryFlowUi.formatShiftDuration(completedShiftSummary.durationSeconds);
     shiftSummaryDeliveries.textContent = `${completedShiftSummary.completedDeliveries}件`;
     shiftSummaryPoints.textContent = `${completedShiftSummary.pointsEarned} pt`;
+    localShiftFeedback.textContent = completedShiftSummary.localFeedback || '';
+    document.querySelector('#localShiftReview').classList.toggle('hidden', !completedShiftSummary.localFeedback);
     renderShiftReview();
   }
   if (!nextDeliveryKey) {
@@ -1499,14 +1504,40 @@ historyLoadMore.addEventListener('click', async () => {
   }
 });
 
-window.addEventListener('beforeunload', () => {
+function suspendPage() {
+  clearTimeout(pageResumeTimer);
+  pageResumeTimer = null;
   pageIsUnloading = true;
   disconnectRealtime();
+}
+
+function schedulePageResume() {
+  pageIsUnloading = false;
+  clearTimeout(pageResumeTimer);
+  pageResumeTimer = setTimeout(() => {
+    pageResumeTimer = null;
+    if (document.hidden || pageIsUnloading) return;
+    handleViewportResize();
+    if (!driverToken || !navigator.onLine) return;
+    // A suspended socket may still report OPEN even though its connection is stale.
+    disconnectRealtime();
+    realtimeReconnectAttempt = 0;
+    connectRealtime();
+    queueRealtimeRefresh();
+  }, 0);
+}
+
+window.addEventListener('beforeunload', suspendPage);
+window.addEventListener('pagehide', suspendPage);
+window.addEventListener('pageshow', schedulePageResume);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) suspendPage();
+  else schedulePageResume();
 });
 window.addEventListener('online', () => {
   offlineQueueNotice = '接続が戻りました。保存した操作を確認しています。';
   renderOfflineQueueStatus();
-  flushOfflineQueue();
+  schedulePageResume();
 });
 window.addEventListener('offline', () => {
   renderOfflineQueueStatus();
@@ -1517,7 +1548,7 @@ setBottomSheetState(bottomSheetState);
 setRankingPeriod(activeRankingPeriod);
 refresh();
 setInterval(() => {
-  if (!state?.offer || isLoading) return;
+  if (document.hidden || pageIsUnloading || !state?.offer || isLoading) return;
   renderActionDock();
   if (DeliveryFlowUi.shouldAutoAdvanceOffer(state, Date.now(), {
     online: navigator.onLine,
@@ -1529,6 +1560,6 @@ setInterval(() => {
 setInterval(() => {
   const realtimeConnected = realtimeSocket?.readyState === WebSocket.OPEN;
   const safetyRefreshDue = Date.now() - lastSuccessfulRefreshAt >= 60_000;
-  if (!isLoading && (!realtimeConnected || safetyRefreshDue)) refresh({ preserveMessage: true });
+  if (!document.hidden && !pageIsUnloading && navigator.onLine && !isLoading && (!realtimeConnected || safetyRefreshDue)) refresh({ preserveMessage: true });
 }, 10_000);
 

@@ -3,6 +3,19 @@ const unavailableReview = Object.freeze({
   message: 'AIの振り返りを生成できませんでした。勤務実績は記録済みです。',
 });
 
+function createLocalShiftFeedback({ durationSeconds, completedDeliveries, pointsEarned }) {
+  const minutes = Math.floor(durationSeconds / 60);
+  const duration = minutes < 1 ? '1分未満' : minutes < 60 ? `${minutes}分`
+    : `${Math.floor(minutes / 60)}時間${minutes % 60}分`;
+  const achievement = completedDeliveries === 0
+    ? '配達がない勤務でも、開始から退勤までの操作を確認する機会になりました。'
+    : '完了した配達の実績が記録されています。履歴で加点の内訳を確認すると、今回の取り組みを整理できます。';
+  const nextStep = durationSeconds >= 7200
+    ? '次回も無理のないペースを大切にし、長い勤務のあとは休憩を取りましょう。'
+    : '次回はオファーの内容と受取・配達の順序を確認し、落ち着いて操作を進めましょう。';
+  return `今回の勤務、お疲れさまでした。稼働時間は${duration}、完了した配達は${completedDeliveries}件、獲得ポイントは${pointsEarned}ポイントでした。${achievement}${nextStep}数字の大小だけで判断せず、今回の流れを次の学びにつなげてください。気になった操作を一つ振り返ると、次の勤務で意識する点が明確になります。`;
+}
+
 function createShiftFeedback({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || 'gpt-4.1-mini', fetchImpl = fetch, timeoutMilliseconds = 15_000 } = {}) {
   const key = apiKey?.trim();
   return {
@@ -45,4 +58,4 @@ function createShiftFeedback({ apiKey = process.env.OPENAI_API_KEY, model = proc
   };
 }
 
-module.exports = { createShiftFeedback, unavailableReview };
+module.exports = { createShiftFeedback, createLocalShiftFeedback, unavailableReview };

@@ -20,7 +20,7 @@ const {
 const { nearestDrivers } = require('./modules/matching/matching');
 const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
-const { createShiftFeedback, unavailableReview } = require('./modules/shift-review/shift-review');
+const { createShiftFeedback, createLocalShiftFeedback, unavailableReview } = require('./modules/shift-review/shift-review');
 const shiftFeedback = createShiftFeedback();
 const {
   chooseDemoRoute,
@@ -949,16 +949,16 @@ async function endShift(driver, client) {
   for (const offer of pendingOffers) {
     await restoreOrderWhenCandidatesAreGone(offer.orderId, client);
   }
-  return {
-    ...publicDriver(updated),
-    shiftSummary: {
-      startedAt,
-      endedAt,
-      durationSeconds: Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)),
-      completedDeliveries,
-      pointsEarned: scoreSummary._sum.points || 0,
-    },
+  const shiftSummary = {
+    startedAt,
+    endedAt,
+    durationSeconds: Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)),
+    completedDeliveries,
+    pointsEarned: scoreSummary._sum.points || 0,
   };
+  return { ...publicDriver(updated), shiftSummary: {
+    ...shiftSummary, localFeedback: createLocalShiftFeedback(shiftSummary),
+  } };
 }
 
 async function reviewShift(driver, shiftEndKey) {

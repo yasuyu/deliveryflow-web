@@ -107,6 +107,8 @@ async function main() {
   assert.deepEqual(older.body.deliveries[0].scoreEvent.breakdown, offer.body.scoreBreakdown);
   const endedShift = await post('/api/shifts/end', 'pg-elevation-end');
   assert.equal(endedShift.response.status, 200);
+  assert.match(endedShift.body.shiftSummary.localFeedback, /完了した配達は21件/);
+  assert.ok(endedShift.body.shiftSummary.localFeedback.includes(`${endedShift.body.shiftSummary.pointsEarned}ポイント`));
   // Opt in only in isolated CI/test stacks, never incur an unintended paid API call.
   if (process.env.EXPECTED_AI_REVIEW_STATUS) {
     const review = () => jsonRequest('/api/shifts/review', {
