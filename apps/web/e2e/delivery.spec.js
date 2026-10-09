@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
+const { finishTestShift } = require('./shift-cleanup');
 
-test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実行しない', async ({ page }, testInfo) => {
+test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実行しない', async ({ page, request }, testInfo) => {
   await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
   let requests = 0;
   const feedback = '今回の勤務、お疲れさまでした。配達0件でも、勤務の流れを確認できたことは次の学びにつながります。'.repeat(3) + '<img src=x onerror=alert(1)>';
@@ -34,6 +35,7 @@ test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実�
   await page.screenshot({ path: testInfo.outputPath('ai-shift-review-narrow.png') });
   await page.getByRole('button', { name: '稼働を開始する', exact: true }).click();
   await expect(page.locator('#lastShiftSummary')).toBeHidden();
+  await finishTestShift(page, request);
 });
 
 test('登録から配達完了、履歴確認、退勤まで進められる', async ({ page }, testInfo) => {

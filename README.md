@@ -316,6 +316,8 @@ docker compose --env-file .env.postgres down
 
 PostgreSQL版も同じホーム画面追加機能を利用できます。固定HTTPS URLの転送先をPostgreSQL版のポート（標準は3106）へ設定してください。URLを維持すれば、既存のホーム画面アイコンをそのまま利用できます。SQLiteとPostgreSQLの配達員・履歴・スコアは別々に保存されるため、切替後はPostgreSQL側の配達員でログインするか、新規登録します。DBの切替だけでは既存データは移行されません。
 
+Neon・Renderのクラウド版へ既存データを引き継ぐ場合も、バックアップと移行対象の確認が必要です。移行後のPC版とクラウド版は自動同期しないため、継続利用するURLを統一してください。実施済みの移行方針と確認内容は[クラウド利用の手順](docs/cloud-setup.md#pc版のデータを引き継ぐ)を参照してください。
+
 SQLiteだけをDockerで動かす場合は、ルートをビルドコンテキストに指定します。
 
 ```powershell
@@ -366,6 +368,8 @@ npm run test:e2e
 
 デスクトップとスマートフォン幅で、登録から配達完了、加点・履歴の保存、退勤サマリーまで確認します。専用の一時SQLite DBと空きポートのサーバーを自動作成し、終了時に片付けます。外部地図タイルはテスト用画像へ置き換えます。失敗時のスクリーンショットとトレースはGit管理外の`test-results/`へ保存します。
 
+勤務状態を確認する各テストは最後に退勤し、後続テストのオファー候補に配達員を残さないようにします。
+
 上部カードの表示はiPhone相当のWebKitでも検証します。初回ログイン・再読み込み・短い画面に加え、Visual Viewportの上下のずれを模擬し、勤務状態・スコア・メニューが隠れず操作できることを確認します。実際のiOSキーボードやホーム画面からの起動は、スマートフォン実機で確認します。
 
 Pull RequestではGitHub Actionsが次を自動確認します。
@@ -400,6 +404,7 @@ SQLiteとPostgreSQLのSchema・Migrationを両方更新し、両方のPrisma Cli
 - [機能一覧と実装状況](docs/features.md)
 - [デモ手順](docs/demo.md)
 - [性能確認と負荷試験](docs/performance.md)
+- [Neon・Renderで使うための設定・確認手順](docs/cloud-setup.md)
 - [API仕様](docs/openapi.yaml)
 - [実装状況とロードマップ](docs/PROJECT_STATUS.md)
 

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { finishTestShift } = require('./shift-cleanup');
 
 test('初回ログイン・再読み込み・表示領域の移動後も勤務状態とメニューが見える', async ({ page, request, isMobile }, testInfo) => {
   // Desktop emulation cannot open the iOS keyboard. Keep its vertical viewport
@@ -73,4 +74,6 @@ test('初回ログイン・再読み込み・表示領域の移動後も勤務�
     window.visualViewport.dispatchEvent(new Event('resize'));
   });
   await expectStatusAccessible();
+  // Later tests share this temporary DB and select the nearest three drivers.
+  await finishTestShift(page, request);
 });
