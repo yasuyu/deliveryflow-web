@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { DatabaseSync } = require('node:sqlite');
+const { finishTestShift } = require('./shift-cleanup');
 
 // Playwright cannot lock a physical phone. Dispatch its visibility/BFCache events;
 // use real WebSockets, API changes, and actual browser network disconnection.
@@ -121,4 +122,5 @@ test('中断中に期限切れになったオファーと選択中の画面を�
   await page.getByRole('button', { name: '配達画面に戻る', exact: true }).click();
   await expect(page.getByRole('button', { name: 'この配達を受諾する', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'オファーを確認する', exact: true })).toBeEnabled();
+  await finishTestShift(page, request);
 });
