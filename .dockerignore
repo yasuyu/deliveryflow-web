@@ -7,6 +7,11 @@ generated/
 .github/
 .env
 .env.postgres
+.env.local
+.env.neon.local
+.neon
+.agents/skills/
+skills-lock.json
 prisma/*.db
 prisma/*.db-journal
 prisma/*.db-wal

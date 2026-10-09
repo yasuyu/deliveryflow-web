@@ -318,6 +318,8 @@ PostgreSQL版も同じホーム画面追加機能を利用できます。固定H
 
 Neon・Renderのクラウド版へ既存データを引き継ぐ場合も、バックアップと移行対象の確認が必要です。移行後のPC版とクラウド版は自動同期しないため、継続利用するURLを統一してください。実施済みの移行方針と確認内容は[クラウド利用の手順](docs/cloud-setup.md#pc版のデータを引き継ぐ)を参照してください。
 
+クラウド版で増えた履歴・ポイントは、`npm run backup:cloud`で`data/cloud-backups/`へ保存します。`npm run test:backup:cloud`は新しい専用のローカルPostgreSQL 18 DBへ復元し、全9テーブルとID採番を照合します。既存のPC版DBとNeonへの上書きは行いません。使い方・保存頻度は[クラウド版のバックアップ手順](docs/cloud-backup.md)を参照してください。
+
 SQLiteだけをDockerで動かす場合は、ルートをビルドコンテキストに指定します。
 
 ```powershell
