@@ -46,6 +46,11 @@ jobs:
       - name: Run API tests
         run: npm test
 
+      - name: Run API tests with database idle mode
+        env:
+          DATABASE_IDLE_MODE: 'true'
+        run: node --test apps/server/test/api.test.js
+
   browser-e2e:
     name: Browser E2E
     needs: sqlite-tests
@@ -83,6 +88,11 @@ jobs:
     needs: sqlite-tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      matrix:
+        database-idle-mode: ['false', 'true']
+    env:
+      DATABASE_IDLE_MODE: ${{ matrix.database-idle-mode }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

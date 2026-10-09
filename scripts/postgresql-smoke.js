@@ -26,6 +26,13 @@ async function jsonRequest(pathname, options = {}) {
 async function main() {
   await waitForServer();
 
+  const health = await jsonRequest('/healthz');
+  assert.equal(health.response.status, 200);
+  assert.equal(health.body.database, process.env.DATABASE_IDLE_MODE === 'true' ? 'not_checked' : 'connected');
+  const ready = await jsonRequest('/readyz');
+  assert.equal(ready.response.status, 200);
+  assert.deepEqual(ready.body, { status: 'ok', database: 'connected' });
+
   const registration = await jsonRequest('/api/drivers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

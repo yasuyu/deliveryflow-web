@@ -120,6 +120,7 @@ async function startServer(port, reviewEnabled = true) {
       PORT: String(port),
       OFFER_TTL_SECONDS: '30',
       OFFER_CANDIDATE_LIMIT: '3',
+      DATABASE_IDLE_MODE: process.env.DATABASE_IDLE_MODE || 'false',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
       DEMO_RANKING_SEED: 'false',
       OPENAI_API_KEY: reviewEnabled ? 'test-only-openai-key' : '',
@@ -461,7 +462,7 @@ test('店舗に近い3人へ同じオファーを送り、最初の受諾で残�
 
   const database = new DatabaseSync(databasePath);
   database.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
-    .run(new Date('2020-01-01T00:00:00Z').getTime(), drivers[1].id);
+    .run(Date.now() - 5 * 60 * 1000, drivers[1].id);
 
   const firstOffer = await drivers[0].post('/api/offers/current', 'nearest-show-first');
   assert.equal(firstOffer.status, 200);
@@ -717,7 +718,12 @@ test('認証なしでは配達員用APIを利用できない', async () => {
 test('監視用エンドポイントはDB接続状況と安全なメトリクスを返す', async () => {
   const health = await request('/healthz');
   assert.equal(health.status, 200);
-  assert.deepEqual(health.body, { status: 'ok', database: 'connected' });
+  assert.deepEqual(health.body, {
+    status: 'ok', database: process.env.DATABASE_IDLE_MODE === 'true' ? 'not_checked' : 'connected',
+  });
+  const ready = await request('/readyz');
+  assert.equal(ready.status, 200);
+  assert.deepEqual(ready.body, { status: 'ok', database: 'connected' });
 
   const metrics = await request('/metrics');
   assert.equal(metrics.status, 200);

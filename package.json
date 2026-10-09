@@ -22,7 +22,7 @@
     "db:studio": "node --env-file=.env node_modules/prisma/build/index.js studio",
     "backup:postgres": "node scripts/postgresql-backup.js backup",
     "restore:postgres": "node scripts/postgresql-backup.js restore",
-    "check:local-reliability": "node --check scripts/postgresql-backup.js && node --check scripts/verify-postgresql-backup.js && node --check apps/web/e2e/resume.spec.js",
+    "check:local-reliability": "node --check scripts/postgresql-backup.js && node --check scripts/verify-postgresql-backup.js && node --check apps/web/e2e/resume.spec.js && node --check apps/server/src/modules/location/location-maintenance.js && node --check scripts/test-support/database-query-log.cjs",
     "test:backup:postgres": "node scripts/verify-postgresql-backup.js"
   },
   "dependencies": {
