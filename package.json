@@ -26,6 +26,8 @@
     "test:backup:postgres": "node scripts/verify-postgresql-backup.js"
   },
   "dependencies": {
+    "@neon/config": "^1.8.6",
+    "@neon/env": "^1.5.3",
     "@prisma/client": "^6.19.1",
     "leaflet": "1.9.4",
     "ngraph.graph": "20.1.2",

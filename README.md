@@ -316,6 +316,8 @@ docker compose --env-file .env.postgres down
 
 PostgreSQL版も同じホーム画面追加機能を利用できます。固定HTTPS URLの転送先をPostgreSQL版のポート（標準は3106）へ設定してください。URLを維持すれば、既存のホーム画面アイコンをそのまま利用できます。SQLiteとPostgreSQLの配達員・履歴・スコアは別々に保存されるため、切替後はPostgreSQL側の配達員でログインするか、新規登録します。DBの切替だけでは既存データは移行されません。
 
+Neon・Renderのクラウド版へ既存データを引き継ぐ場合も、バックアップと移行対象の確認が必要です。移行後のPC版とクラウド版は自動同期しないため、継続利用するURLを統一してください。実施済みの移行方針と確認内容は[クラウド利用の手順](docs/cloud-setup.md#pc版のデータを引き継ぐ)を参照してください。
+
 SQLiteだけをDockerで動かす場合は、ルートをビルドコンテキストに指定します。
 
 ```powershell
@@ -400,6 +402,7 @@ SQLiteとPostgreSQLのSchema・Migrationを両方更新し、両方のPrisma Cli
 - [機能一覧と実装状況](docs/features.md)
 - [デモ手順](docs/demo.md)
 - [性能確認と負荷試験](docs/performance.md)
+- [Neon・Renderで使うための設定・確認手順](docs/cloud-setup.md)
 - [API仕様](docs/openapi.yaml)
 - [実装状況とロードマップ](docs/PROJECT_STATUS.md)
 

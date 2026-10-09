@@ -6,6 +6,13 @@ playwright-report/
 # Keep environment variables and local data out of version control
 .env
 .env.postgres
+.env.local
+.env.neon.local
+.neon
+
+# Machine-local Neon agent tooling
+.agents/skills/
+skills-lock.json
 prisma/*.db
 prisma/*.db-journal
 prisma/*.db-wal
