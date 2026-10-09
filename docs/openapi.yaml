@@ -15,6 +15,40 @@ x-websocket:
 security:
   - bearerAuth: []
 paths:
+  /healthz:
+    get:
+      summary: アプリの稼働を確認する
+      description: DATABASE_IDLE_MODE=trueではDBへの問い合わせを行わずnot_checkedを返す。自動休止を利用する環境の定期監視に使用する。既定のfalseではDB接続も確認する。not_checkedはDB正常・休止を確認したことを意味しない。
+      security: []
+      responses:
+        '200':
+          description: アプリ稼働中
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, database]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  database: { type: string, enum: [connected, not_checked] }
+        '500': { description: 通常モードでDB接続確認に失敗 }
+  /readyz:
+    get:
+      summary: DB接続を明示的に確認する
+      description: 両モードでSELECT 1を実行する。休止中のDBを起こす可能性があるため、DBの自動休止を利用する環境の定期監視には使用しない。
+      security: []
+      responses:
+        '200':
+          description: DBへ接続できる
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, database]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  database: { type: string, enum: [connected] }
+        '500': { description: DB接続確認に失敗 }
   /api/drivers:
     post:
       summary: 配達員を登録してアクセス用トークンを発行する
@@ -75,7 +109,7 @@ paths:
   /api/drivers/me/location:
     put:
       summary: 勤務中の配達位置をデモ位置または端末位置へ更新する
-      description: DEMOは京都市役所付近の固定座標を使う。DEVICEはブラウザで明示的に許可・取得した座標を約100m単位へ丸めて上書きする。位置は退勤時または最終更新から12時間後に削除する。このPUTは同じ値の再送で二重処理が発生しないためIdempotency-Keyは不要。
+      description: DEMOは京都市役所付近の固定座標を使う。DEVICEはブラウザで明示的に許可・取得した座標を約100m単位へ丸めて上書きする。位置は退勤時または最終更新から12時間経過後の定期処理で削除する。DATABASE_IDLE_MODE=trueでは定期処理を止め、期限切れ位置の物理削除は次の認証済み利用まで延期するが、12時間経過後の位置は候補選定・距離計算に使わない。このPUTは同じ値の再送で二重処理が発生しないためIdempotency-Keyは不要。
       requestBody:
         required: true
         content:

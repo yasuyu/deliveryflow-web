@@ -18,6 +18,7 @@ const {
   normalizedLocation,
 } = require('./modules/location/location');
 const { nearestDrivers } = require('./modules/matching/matching');
+const { databaseIdleModeFromEnv, createLocationMaintenance } = require('./modules/location/location-maintenance');
 const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
 const { createShiftFeedback, createLocalShiftFeedback, unavailableReview } = require('./modules/shift-review/shift-review');
@@ -83,6 +84,17 @@ if (!process.env.DATABASE_URL) {
 }
 
 const prisma = new PrismaClient();
+const databaseIdleMode = databaseIdleModeFromEnv();
+const locationMaintenance = createLocationMaintenance({
+  idleMode: databaseIdleMode,
+  cleanup: clearExpiredLocations,
+  onError: (error) => console.error(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'error',
+    event: 'location_cleanup_failed',
+    message: error.message,
+  })),
+});
 let sqliteTransactionQueue = Promise.resolve();
 
 function databaseTransaction(operation) {
@@ -368,6 +380,7 @@ async function authenticateAccessToken(accessToken) {
   const accessTokenHash = createHash('sha256').update(accessToken).digest('hex');
   const driver = await prisma.driver.findUnique({ where: { accessTokenHash } });
   if (!driver) throw new ApiError(401, 'UNAUTHORIZED', '配達員が見つかりません');
+  await locationMaintenance.onActivity();
   return clearExpiredDriverLocation(driver);
 }
 
@@ -468,7 +481,9 @@ async function createNextOffer(driver, client = prisma) {
       offers: { none: { status: 'PENDING' } },
     },
   });
-  const candidates = nearestDrivers(eligibleDrivers, store, offerCandidateLimit);
+  const candidates = nearestDrivers(
+    eligibleDrivers.filter((candidate) => locationStatus(candidate) === 'AVAILABLE'), store, offerCandidateLimit,
+  );
   if (!candidates.some((candidate) => candidate.id === driver.id)) return;
 
   const rules = await client.scoreRule.findMany();
@@ -1247,6 +1262,11 @@ async function handle(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
   if (request.method === 'GET' && url.pathname === '/healthz') {
+    if (databaseIdleMode) return json(response, 200, { status: 'ok', database: 'not_checked' });
+    await prisma.$queryRaw`SELECT 1`;
+    return json(response, 200, { status: 'ok', database: 'connected' });
+  }
+  if (request.method === 'GET' && url.pathname === '/readyz') {
     await prisma.$queryRaw`SELECT 1`;
     return json(response, 200, { status: 'ok', database: 'connected' });
   }
@@ -1429,19 +1449,12 @@ const server = http.createServer(async (request, response) => {
 });
 
 realtimeHub = createRealtimeHub(server, authenticateAccessToken);
+server.on('close', () => locationMaintenance.stop());
 
 ensureSeed().then(() => {
   server.listen(port, () => {
     console.log(`DeliveryFlow is running at http://localhost:${port}`);
-    const locationCleanupTimer = setInterval(() => {
-      clearExpiredLocations().catch((error) => console.error(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        event: 'location_cleanup_failed',
-        message: error.message,
-      })));
-    }, 5 * 60 * 1000);
-    locationCleanupTimer.unref();
+    locationMaintenance.start();
   });
 });
 
