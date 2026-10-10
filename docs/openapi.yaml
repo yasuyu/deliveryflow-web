@@ -305,7 +305,7 @@ paths:
   /api/shifts/review:
     post:
       summary: 確定した勤務サマリーから約200文字のAI振り返りを生成する
-      description: 本人の退勤APIのIdempotency-KeyをshiftEndKeyに指定する。DBの確定値だけを使用し、同じ勤務の同時送信・再送・再起動後もOpenAI呼出は最大1回。結果は保存して再返却する。失敗後の再生成はしない。キー未設定なら外部通信しない。勤務時間・件数・ポイントだけをOpenAIへ送信し、氏名・座標は送らない。
+      description: 本人の退勤APIのIdempotency-KeyをshiftEndKeyに指定する。DBの確定値だけを使用し、同じ勤務の同時送信・再送・再起動後もGemini呼出は最大1回。結果は保存して再返却する。失敗後の再生成・有料APIへの切替はしない。GEMINI_API_KEYとGEMINI_FREE_TIER_CONFIRMED=trueの両方がなければDISABLEDを返して外部通信しない。確認設定は運用者によるFree Tier・請求先未関連付け確認の記録で、Googleの課金状態を自動検査するものではない。勤務時間・件数・ポイントだけをGeminiの固定モデルgemini-3.5-flash-liteへ送信し、氏名・座標・日時・IDは送らない。上限・通信失敗時も退勤時のlocalFeedbackを引き続き利用できる。無料枠では送信内容・生成文がGoogleの製品改善に使われる。
       requestBody:
         required: true
         content:

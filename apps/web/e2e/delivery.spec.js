@@ -22,6 +22,8 @@ test('退勤後のAI振り返りは生成中と結果を表示し、HTMLを実�
   await expect(page.locator('#shiftSummaryDeliveries')).toBeInViewport({ ratio: 1 });
   await expect(page.locator('#shiftReviewButton')).toBeInViewport({ ratio: 1 });
   const button = page.locator('#shiftReviewButton');
+  await expect(page.locator('#shiftReviewText')).toContainText('Gemini');
+  await expect(page.locator('#shiftReviewText')).toContainText('Googleの製品改善');
   await button.click();
   await expect(button).toBeDisabled();
   await expect(page.locator('#shiftReviewText')).toHaveText(feedback);
@@ -146,7 +148,7 @@ test('登録から配達完了、履歴確認、退勤まで進められる', as
   await expect(page.locator('#localShiftFeedback')).toContainText('完了した配達は1件');
   await expect(page.locator('#localShiftFeedback')).toContainText(`${points}ポイント`);
   await page.locator('#shiftReviewButton').click();
-  await expect(page.locator('#shiftReviewText')).toHaveText('AIの振り返りは未設定です。');
+  await expect(page.locator('#shiftReviewText')).toContainText('無料プランの確認');
   await expect(page.locator('#shiftReviewButton')).toBeDisabled();
   await page.locator('#localShiftFeedback').scrollIntoViewIfNeeded();
   await expect(page.locator('#localShiftFeedback')).toBeInViewport({ ratio: 0.999 });

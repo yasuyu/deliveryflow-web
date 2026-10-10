@@ -996,21 +996,21 @@ async function reviewShift(driver, shiftEndKey) {
     const previous = await client.idempotencyKey.findUnique({ where: identity });
     if (previous) {
       const review = previous.response ? JSON.parse(previous.response) : { status: 'UNAVAILABLE', ...unavailableReview };
-      // A restart during the outbound call must not cause another paid request.
+      // A restart during the outbound call must not consume quota again.
       if (review.status === 'PENDING' && Date.now() - previous.createdAt.getTime() > 30_000) {
         await client.idempotencyKey.update({ where: identity, data: { response: JSON.stringify(unavailableReview) } });
         return { review: { ...unavailableReview } };
       }
       return { review };
     }
-    if (!shiftFeedback.configured) return { review: { status: 'DISABLED', message: 'AIの振り返りは未設定です。' } };
+    if (!shiftFeedback.configured) return { review: { ...shiftFeedback.disabledReview } };
     await client.idempotencyKey.create({
       data: { key, endpoint: '/api/shifts/review', driverId: driver.id, statusCode: 200, response: JSON.stringify({ status: 'PENDING' }) },
     });
     return { summary };
   });
   if (claim.review) return claim.review;
-  // Commit the claim before calling OpenAI; never hold a DB transaction over the network.
+  // Commit the claim before calling Gemini; never hold a DB transaction over the network.
   const review = await shiftFeedback.generate(claim.summary);
   await databaseTransaction((client) => client.idempotencyKey.update({
     where: identity, data: { response: JSON.stringify(review) },

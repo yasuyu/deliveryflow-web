@@ -1462,7 +1462,7 @@ actions.addEventListener('click', handleAction);
 function renderShiftReview() {
   const review = completedShiftSummary?.aiReview;
   shiftReviewText.textContent = review?.feedback || review?.message
-    || '勤務時間・配達件数・ポイントをOpenAIへ送り、約200文字の振り返りを生成します。';
+    || '勤務時間・配達件数・ポイントだけをGeminiへ送り、約200文字の振り返りを生成します。無料枠では送信内容・生成文がGoogleの製品改善に使われます。';
   shiftReviewButton.disabled = ['PENDING', 'AVAILABLE', 'DISABLED', 'UNAVAILABLE'].includes(review?.status);
   shiftReviewButton.textContent = review?.status === 'PENDING' ? '振り返りを生成中…' : 'AIで振り返る';
 }
@@ -1474,7 +1474,7 @@ shiftReviewButton.addEventListener('click', async () => {
   summary.aiReview = { status: 'PENDING', message: '振り返りを生成しています…' };
   renderShiftReview();
   try {
-    // Polling retrieves the saved result; it never starts a second OpenAI call.
+    // Polling retrieves the saved result; it never starts a second Gemini call.
     for (let attempt = 0; attempt < 32; attempt += 1) {
       if (summary !== completedShiftSummary || token !== driverToken) return;
       const review = await request('/api/shifts/review', { shiftEndKey: summary.shiftEndKey });
