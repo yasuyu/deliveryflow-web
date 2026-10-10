@@ -237,6 +237,71 @@ paths:
                 properties:
                   shiftSummary: { $ref: '#/components/schemas/ShiftSummary' }
         '409': { description: 配達中・退勤中、または同時操作で状態が変わったため退勤不可 }
+  /api/shifts/history:
+    get:
+      summary: 本人の退勤済み勤務サマリーを新しい順に20件ずつ取得する
+      description: 保存済み退勤応答のID降順。再送は重複しない。サマリーのない旧版・壊れた応答は除くため、shiftsが空でもhasMoreがtrueなら次のページへ進める。成功応答はCache-Control=no-store。AI生成は行わない。
+      parameters:
+        - { name: cursor, in: query, schema: { type: integer, minimum: 1, maximum: 2147483647 }, description: 前ページのpagination.nextCursor }
+      responses:
+        '200':
+          description: 本人の勤務実績と次のページ情報。氏名・認証情報・再送キーは含まない。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shifts, pagination]
+                properties:
+                  shifts:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [id, startedAt, endedAt, durationSeconds, completedDeliveries, pointsEarned]
+                      properties:
+                        id: { type: integer, minimum: 1 }
+                        startedAt: { type: string, format: date-time }
+                        endedAt: { type: string, format: date-time }
+                        durationSeconds: { type: integer, minimum: 0 }
+                        completedDeliveries: { type: integer, minimum: 0 }
+                        pointsEarned: { type: integer, minimum: 0 }
+                  pagination:
+                    type: object
+                    required: [pageSize, hasMore, nextCursor]
+                    properties:
+                      pageSize: { type: integer, enum: [20] }
+                      hasMore: { type: boolean }
+                      nextCursor: { type: integer, nullable: true, minimum: 1 }
+        '400': { description: cursorが不正 }
+        '401': { description: Bearerトークンが不正 }
+  /api/shifts/history/{id}:
+    get:
+      summary: 本人の過去の勤務サマリーと保存済みAI振り返りを再表示する
+      description: 読み取り専用。AIを生成せず、退勤や加点を再実行しない。無料コメントのない旧版サマリーには実績から定型コメントを補う。AI結果が未保存ならnull、生成開始から30秒を超えたPENDINGはDBを更新せずUNAVAILABLEとして表示。成功応答はCache-Control=no-store。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 2147483647 }, description: 勤務履歴一覧のID }
+      responses:
+        '200':
+          description: 勤務サマリーと保存済みの振り返り
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftSummary, aiReview]
+                properties:
+                  id: { type: integer, minimum: 1 }
+                  shiftSummary: { $ref: '#/components/schemas/ShiftSummary' }
+                  aiReview:
+                    type: object
+                    nullable: true
+                    required: [status]
+                    properties:
+                      status: { type: string, enum: [AVAILABLE, PENDING, DISABLED, UNAVAILABLE] }
+                      feedback: { type: string, maxLength: 240 }
+                      message: { type: string }
+        '400': { description: 勤務IDが整数の許容範囲外 }
+        '401': { description: Bearerトークンが不正 }
+        '404': { description: 本人の勤務サマリーが存在しない、または旧版・壊れた応答のため表示不可 }
   /api/shifts/review:
     post:
       summary: 確定した勤務サマリーから約200文字のAI振り返りを生成する

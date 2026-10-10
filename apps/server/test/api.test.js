@@ -1091,6 +1091,12 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
   assert.equal((await review('')).status, 400);
   const ended = await driver.post('/api/shifts/end', key);
   assert.equal(ended.status, 200);
+  const historyHeaders = { Authorization: `Bearer ${driver.token}` };
+  const history = await request('/api/shifts/history', { headers: historyHeaders });
+  const detailPath = `/api/shifts/history/${history.body.shifts[0].id}`;
+  const readHistory = () => request(detailPath, { headers: historyHeaders });
+  assert.deepEqual((await readHistory()).body.shiftSummary, ended.body.shiftSummary);
+  assert.equal((await readHistory()).body.aiReview, null);
   assert.equal((await review(key, accessToken)).status, 404);
   const results = await Promise.all([review(key), review(key)]);
   const available = results.find((result) => result.body.status === 'AVAILABLE');
@@ -1100,6 +1106,7 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
   assert.equal(results.every((result) => result.status === 200), true);
   assert.equal(JSON.stringify(results).includes('test-only-openai-key'), false);
   assert.deepEqual((await review(key)).body, available.body);
+  assert.deepEqual((await readHistory()).body.aiReview, available.body);
   assert.deepEqual((await driver.post('/api/shifts/end', key)).body, ended.body);
 
   const port = Number(new URL(baseUrl).port);
@@ -1107,11 +1114,16 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
   await once(serverProcess, 'exit');
   await startServer(port);
   assert.deepEqual((await review(key)).body, available.body);
+  assert.deepEqual((await readHistory()).body.aiReview, available.body);
   // Simulate a process stopping after committing the claim, before saving the response.
   const db = new DatabaseSync(databasePath);
   db.prepare('UPDATE "IdempotencyKey" SET response = ?, createdAt = ? WHERE key = ? AND endpoint = ?')
     .run(JSON.stringify({ status: 'PENDING' }), Date.now() - 60_000, key, '/api/shifts/review');
   db.close();
+  assert.equal((await readHistory()).body.aiReview.status, 'UNAVAILABLE');
+  const unchanged = new DatabaseSync(databasePath);
+  assert.equal(JSON.parse(unchanged.prepare('SELECT response FROM IdempotencyKey WHERE key = ? AND endpoint = ?').get(key, '/api/shifts/review').response).status, 'PENDING');
+  unchanged.close();
   assert.equal((await review(key)).body.status, 'UNAVAILABLE');
   assert.equal((await review(key)).body.status, 'UNAVAILABLE');
 
@@ -1187,6 +1199,76 @@ test('雨天ボーナスの見込みと完了後の内訳を固定し二重加�
   assert.equal(score.body.lifetimeScore, expectedRainPoints);
   assert.equal(score.body.recentEvents.length, 1);
   assert.deepEqual(score.body.recentEvents[0].breakdown, offer.body.scoreBreakdown);
+});
+
+test('勤務履歴は本人の退勤実績を20件ずつ保持し、再送・次の勤務・再ログインでも重複しない', async () => {
+  const driver = await safetyDriver();
+  let headers = { Authorization: `Bearer ${driver.token}` };
+  const read = (pathname) => request(pathname, { headers });
+  const summaries = [];
+  for (let index = 0; index < 22; index += 1) {
+    if (index > 0) assert.equal((await driver.post('/api/shifts/start')).status, 200);
+    const key = randomUUID();
+    const end = await driver.post('/api/shifts/end', key);
+    assert.equal(end.status, 200);
+    assert.deepEqual((await driver.post('/api/shifts/end', key)).body, end.body);
+    summaries.push(end.body.shiftSummary);
+  }
+  const first = await read('/api/shifts/history');
+  assert.equal(first.status, 200);
+  assert.equal(first.body.shifts.length, 20);
+  assert.equal(first.body.pagination.hasMore, true);
+  const second = await read(`/api/shifts/history?cursor=${first.body.pagination.nextCursor}`);
+  assert.equal(second.body.shifts.length, 2);
+  assert.deepEqual(second.body.pagination, { pageSize: 20, hasMore: false, nextCursor: null });
+  const all = [...first.body.shifts, ...second.body.shifts];
+  assert.equal(new Set(all.map((item) => item.id)).size, 22);
+  assert.ok(all.every((item, index) => index === 0 || item.id < all[index - 1].id));
+  const id = all.at(-1).id;
+  const detail = await read(`/api/shifts/history/${id}`);
+  assert.deepEqual(detail.body, { id, shiftSummary: summaries[0], aiReview: null });
+  assert.equal((await fetch(`${baseUrl}/api/shifts/history/${id}`, { headers })).headers.get('cache-control'), 'no-store');
+  assert.equal((await fetch(`${baseUrl}/api/shifts/history`, { headers })).headers.get('cache-control'), 'no-store');
+  assert.equal((await request(`/api/shifts/history/${id}`, { headers: { Authorization: `Bearer ${accessToken}` } })).status, 404);
+  assert.equal((await request('/api/shifts/history')).status, 401);
+  assert.equal((await request(`/api/shifts/history/${id}`)).status, 401);
+  for (const cursor of ['', '0', '-1', '1.5', 'abc', '2147483648', '9007199254740991', '9007199254740992']) {
+    assert.equal((await read(`/api/shifts/history?cursor=${cursor}`)).status, 400);
+  }
+  for (const id of ['2147483648', '9007199254740991', '9007199254740992']) {
+    assert.equal((await read(`/api/shifts/history/${id}`)).status, 400);
+  }
+  assert.equal((await driver.post('/api/shifts/start')).status, 200);
+  assert.deepEqual((await read(`/api/shifts/history/${id}`)).body, detail.body);
+  assert.equal((await read('/api/dashboard')).body.driver.status, 'IDLE');
+  assert.equal((await driver.post('/api/shifts/end')).status, 200);
+  assert.equal((await driver.post('/api/logout')).status, 200);
+  assert.equal((await read('/api/shifts/history')).status, 401);
+  const login = await request('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driverId: driver.id, pin: '123456' }) });
+  assert.equal(login.status, 200);
+  headers = { Authorization: `Bearer ${login.body.accessToken}` };
+  assert.deepEqual((await read(`/api/shifts/history/${id}`)).body, detail.body);
+});
+
+test('勤務履歴で旧版・未確定・壊れた応答を除き、別の配達員や端末の秘密を返さない', async () => {
+  const driver = await safetyDriver();
+  const end = await driver.post('/api/shifts/end');
+  const database = new DatabaseSync(databasePath);
+  let pendingId;
+  let legacyId;
+  try {
+    const insert = database.prepare('INSERT INTO IdempotencyKey (key, endpoint, driverId, response, statusCode, createdAt) VALUES (?, ?, ?, ?, ?, ?)');
+    const add = (response, statusCode = 200) => insert.run(randomUUID(), '/api/shifts/end', driver.id, response, statusCode, Date.now()).lastInsertRowid;
+    legacyId = add('{}');
+    add('{');
+    pendingId = add(null, null);
+    add(JSON.stringify({ shiftSummary: end.body.shiftSummary }), 409);
+  } finally { database.close(); }
+  const headers = { Authorization: `Bearer ${driver.token}` };
+  const history = await request('/api/shifts/history', { headers });
+  assert.equal(history.body.shifts.length, 1);
+  assert.deepEqual(Object.keys(history.body.shifts[0]).sort(), ['id', 'startedAt', 'endedAt', 'durationSeconds', 'completedDeliveries', 'pointsEarned'].sort());
+  for (const id of [pendingId, legacyId]) assert.equal((await request(`/api/shifts/history/${id}`, { headers })).status, 404);
 });
 
 test('日本語の途中で分割されたJSON本文を文字化けせず保存する', async () => {

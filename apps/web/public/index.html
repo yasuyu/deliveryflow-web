@@ -191,6 +191,27 @@
         </div>
       </section>
       <section class="card">
+        <p class="eyebrow">SHIFT HISTORY</p><h2>勤務履歴</h2>
+        <p class="history-result-count">退勤済みの勤務サマリーと保存済みの振り返りを確認できます。</p>
+        <button type="button" id="shiftHistoryReload" class="button-secondary">勤務履歴を再読み込み</button>
+        <p id="shiftHistoryStatus" class="history-result-count" role="status"></p>
+        <p id="shiftHistoryError" class="history-load-error hidden" role="alert"></p>
+        <ol id="shiftHistoryList" class="history-list shift-history-list"></ol>
+        <button type="button" id="shiftHistoryMore" class="button-secondary hidden">以前の勤務を読み込む</button>
+        <section id="historicalShift" class="historical-shift hidden" aria-label="過去の勤務サマリー" tabindex="-1">
+          <h3>勤務サマリー</h3>
+          <p id="historicalShiftDates"></p>
+          <dl class="historical-shift-metrics">
+            <div><dt>勤務時間</dt><dd id="historicalShiftDuration"></dd></div>
+            <div><dt>配達完了</dt><dd id="historicalShiftDeliveries"></dd></div>
+            <div><dt>獲得ポイント</dt><dd id="historicalShiftPoints"></dd></div>
+          </dl>
+          <h4>勤務の振り返り</h4><p id="historicalShiftFeedback" class="shift-review"></p>
+          <h4>AIの振り返り</h4><p id="historicalShiftAi" class="shift-review"></p>
+          <button type="button" id="historicalShiftReload" class="button-secondary">サマリーを再読み込み</button>
+        </section>
+      </section>
+      <section class="card">
         <p class="eyebrow">DELIVERY HISTORY</p><h2>配達実績・加点履歴</h2>
         <p class="history-summary">完了した配達 <strong id="completedDeliveryCount">0</strong> 件</p>
         <p id="lastDeliveredAt">まだ完了した配達はありません。</p>
