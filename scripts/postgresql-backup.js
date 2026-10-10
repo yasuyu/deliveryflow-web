@@ -45,38 +45,41 @@ function resolveDocker() {
 }
 
 function createDockerRunner(envFile) {
-  return async (args, { inputFile, outputFile } = {}) => {
-    const child = spawn(resolveDocker(), ['compose', '--env-file', envFile, ...args], {
-      cwd: projectRoot, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const result = new Promise((resolve, reject) => {
-      child.once('error', () => reject(new Error('Dockerを起動できません。Docker DesktopとPATHを確認してください。')));
-      child.once('close', (code) => code === 0 ? resolve() : reject(new Error('PostgreSQLの処理に失敗しました。DBの起動状態、復元先DBの重複、バックアップを確認してください。')));
-    });
-    // Provider diagnostics can include local paths or configuration. Do not echo them.
-    child.stderr.resume();
-    let stdout = '';
-    const tasks = [result];
-    if (outputFile) tasks.push(pipeline(child.stdout, fs.createWriteStream(outputFile, { flags: 'wx', mode: 0o600 })));
-    else tasks.push((async () => {
-      for await (const chunk of child.stdout) {
-        stdout += chunk.toString('utf8');
-        if (stdout.length > 1_000_000) throw new Error('PostgreSQLの出力が上限を超えました。');
-      }
-    })());
-    if (inputFile) tasks.push(pipeline(fs.createReadStream(inputFile), child.stdin));
-    else child.stdin.end();
-    try {
-      await Promise.all(tasks);
-      return stdout.trim();
-    } catch (error) {
-      child.kill();
-      await Promise.allSettled(tasks);
-      // Stream errors must not expose filenames or environment values either.
-      if (error.code) throw new Error('バックアップファイルまたはDockerとの通信を確認してください。');
-      throw error;
+  return (args, options) => runDocker(['compose', '--env-file', envFile, ...args], options);
+}
+
+async function runDocker(args, { inputFile, outputFile, inputText, env = process.env } = {}) {
+  const child = spawn(resolveDocker(), args, {
+    cwd: projectRoot, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const result = new Promise((resolve, reject) => {
+    child.once('error', () => reject(new Error('Dockerを起動できません。Docker DesktopとPATHを確認してください。')));
+    child.stdin.once('error', () => reject(new Error('Dockerへの入力を送信できませんでした。')));
+    child.once('close', (code) => code === 0 ? resolve() : reject(new Error('PostgreSQLの処理に失敗しました。DBの起動状態、復元先DBの重複、バックアップを確認してください。')));
+  });
+  // Provider diagnostics can include local paths or configuration. Do not echo them.
+  child.stderr.resume();
+  let stdout = '';
+  const tasks = [result];
+  if (outputFile) tasks.push(pipeline(child.stdout, fs.createWriteStream(outputFile, { flags: 'wx', mode: 0o600 })));
+  else tasks.push((async () => {
+    for await (const chunk of child.stdout) {
+      stdout += chunk.toString('utf8');
+      if (stdout.length > 1_000_000) throw new Error('PostgreSQLの出力が上限を超えました。');
     }
-  };
+  })());
+  if (inputFile) tasks.push(pipeline(fs.createReadStream(inputFile), child.stdin));
+  else child.stdin.end(inputText);
+  try {
+    await Promise.all(tasks);
+    return stdout.trim();
+  } catch (error) {
+    child.kill();
+    await Promise.allSettled(tasks);
+    // Stream errors must not expose filenames or environment values either.
+    if (error.code) throw new Error('バックアップファイルまたはDockerとの通信を確認してください。');
+    throw error;
+  }
 }
 
 async function checksum(file) {
@@ -106,10 +109,11 @@ function databaseCommand(config, tool, args) {
   return ['exec', '-T', 'db', tool, `--username=${config.POSTGRES_USER}`, ...args];
 }
 
-async function backupDatabase(config, run, outputDirectory = path.join(projectRoot, 'data', 'backups')) {
+async function backupDatabase(config, run, outputDirectory = path.join(projectRoot, 'data', 'backups'), prefix = 'deliveryflow') {
+  if (!/^[a-z_]+$/.test(prefix)) throw new Error('バックアップ名の設定を確認してください。');
   await fsp.mkdir(outputDirectory, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:.]/g, '');
-  const file = path.join(outputDirectory, `deliveryflow_${stamp}_${randomUUID().slice(0, 8)}.dump`);
+  const file = path.join(outputDirectory, `${prefix}_${stamp}_${randomUUID().slice(0, 8)}.dump`);
   const partial = `${file}.partial`;
   await run(databaseCommand(config, 'pg_dump', [`--dbname=${config.POSTGRES_DB}`, '--format=custom']), { outputFile: partial });
   await validateArchive(partial, { checkDigest: false });
@@ -166,4 +170,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseArguments, validateRestoreName, validateArchive, checksum, backupDatabase, restoreDatabase, createDockerRunner, loadConfig };
+module.exports = { parseArguments, validateRestoreName, validateArchive, checksum, backupDatabase, restoreDatabase, createDockerRunner, loadConfig, runDocker };

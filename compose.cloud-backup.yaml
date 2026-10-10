@@ -1,0 +1,25 @@
+name: deliveryflow-cloud-backup
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: deliveryflow_backup
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${CLOUD_RESTORE_PASSWORD:?Use npm run restore:cloud or test:backup:cloud}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "deliveryflow_backup", "-d", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - cloud-backup-data:/var/lib/postgresql
+    networks:
+      - restore
+
+networks:
+  restore:
+    internal: true
+
+volumes:
+  cloud-backup-data:

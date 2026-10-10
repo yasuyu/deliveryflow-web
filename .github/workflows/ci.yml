@@ -124,3 +124,21 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose --env-file .env.postgres.example down -v
+
+  cloud-backup:
+    name: Cloud backup on PostgreSQL 18
+    needs: sqlite-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify cloud backup with isolated PostgreSQL data
+        run: npm run test:backup:cloud:fixture
+      - name: Stop cloud restore container
+        if: always()
+        run: npm run stop:backup:cloud

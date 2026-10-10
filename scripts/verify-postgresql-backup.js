@@ -49,4 +49,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { verifyBackup };
+module.exports = { verifyBackup, snapshotSql };
