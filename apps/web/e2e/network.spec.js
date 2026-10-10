@@ -135,7 +135,8 @@ test('保存済みの完了応答が届かなくても同じキーで再送し�
   await expect(page.locator('#offlineQueueStatus')).toBeVisible();
   await expect(page.locator('#offlineQueueStatus [data-queue-action="retry"]')).toBeEnabled();
   await heldRoute.abort();
-  expect(keys).toHaveLength(2);
+  await expect.poll(() => keys.length).toBe(2);
+  await expect(page.locator('#offlineQueueStatus [data-queue-action="retry"]')).toBeEnabled();
   // A successful read during the retry cooldown must not immediately resend.
   await page.getByRole('button', { name: 'スコアと配達実績を開く' }).click();
   await page.locator('#historyFilterForm button[type="submit"]').click();

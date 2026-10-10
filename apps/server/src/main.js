@@ -23,6 +23,7 @@ const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
 const { createShiftFeedback, createLocalShiftFeedback, unavailableReview } = require('./modules/shift-review/shift-review');
 const shiftFeedback = createShiftFeedback();
+const { listShiftHistory, getShiftHistory } = require('./modules/shift-review/shift-history');
 const {
   chooseDemoRoute,
   demoDropoffs,
@@ -1341,6 +1342,26 @@ async function handle(request, response) {
     const { shiftEndKey } = await readJsonBody(request);
     response.setHeader('Cache-Control', 'no-store');
     return json(response, 200, await reviewShift(driver, shiftEndKey));
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/shifts/history') {
+    const rawCursor = url.searchParams.get('cursor');
+    const cursor = rawCursor === null ? null : Number(rawCursor);
+    if (rawCursor !== null && (!/^[1-9]\d*$/.test(rawCursor) || !Number.isSafeInteger(cursor) || cursor > 2_147_483_647)) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'cursorには正の整数を指定してください');
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    return json(response, 200, await listShiftHistory(prisma, driver.id, cursor));
+  }
+
+  const historicalShift = url.pathname.match(/^\/api\/shifts\/history\/([1-9]\d*)$/);
+  if (request.method === 'GET' && historicalShift) {
+    const id = Number(historicalShift[1]);
+    if (!Number.isSafeInteger(id) || id > 2_147_483_647) throw new ApiError(400, 'VALIDATION_ERROR', '勤務IDには有効な正の整数を指定してください');
+    const summary = await getShiftHistory(prisma, driver.id, id);
+    if (!summary) throw new ApiError(404, 'SHIFT_SUMMARY_NOT_FOUND', '勤務サマリーが見つかりません');
+    response.setHeader('Cache-Control', 'no-store');
+    return json(response, 200, summary);
   }
   if (request.method === 'GET' && url.pathname === '/api/deliveries/history') {
     return json(response, 200, await deliveryHistory(driver.id, url.searchParams));

@@ -116,6 +116,18 @@ async function main() {
   assert.equal(endedShift.response.status, 200);
   assert.match(endedShift.body.shiftSummary.localFeedback, /完了した配達は21件/);
   assert.ok(endedShift.body.shiftSummary.localFeedback.includes(`${endedShift.body.shiftSummary.pointsEarned}ポイント`));
+  const shifts = await jsonRequest('/api/shifts/history', { headers });
+  assert.equal(shifts.response.status, 200);
+  assert.equal(shifts.response.headers.get('cache-control'), 'no-store');
+  assert.equal(shifts.body.shifts.length, 1);
+  assert.equal((await jsonRequest('/api/shifts/history?cursor=2147483648', { headers })).response.status, 400);
+  assert.equal((await jsonRequest('/api/shifts/history/2147483648', { headers })).response.status, 400);
+  const shiftPath = `/api/shifts/history/${shifts.body.shifts[0].id}`;
+  const shiftDetail = await jsonRequest(shiftPath, { headers });
+  assert.deepEqual(shiftDetail.body.shiftSummary, endedShift.body.shiftSummary);
+  assert.equal(shiftDetail.body.aiReview, null);
+  assert.deepEqual((await post('/api/shifts/end', 'pg-elevation-end')).body, endedShift.body);
+  assert.deepEqual((await jsonRequest('/api/shifts/history', { headers })).body, shifts.body);
   // Opt in only in isolated CI/test stacks, never incur an unintended paid API call.
   if (process.env.EXPECTED_AI_REVIEW_STATUS) {
     const review = () => jsonRequest('/api/shifts/review', {
@@ -127,6 +139,8 @@ async function main() {
     const result = results.find((item) => item.body.status === process.env.EXPECTED_AI_REVIEW_STATUS);
     assert.ok(result, 'AI review did not have the expected status');
     assert.deepEqual((await review()).body, result.body);
+    const saved = await jsonRequest(shiftPath, { headers });
+    assert.deepEqual(saved.body.aiReview, result.body.status === 'DISABLED' ? null : result.body);
     if (process.env.EXPECTED_AI_REVIEW_STATUS === 'AVAILABLE') {
       assert.match(result.body.feedback, new RegExp(`配達21件、${endedShift.body.shiftSummary.pointsEarned}ポイント`));
       assert.match(result.body.feedback, /テスト呼出1/);
@@ -150,6 +164,9 @@ async function main() {
   });
   assert.equal(login.response.status, 200);
   assert.notEqual(login.body.accessToken, registration.body.accessToken);
+  assert.equal((await jsonRequest(shiftPath, { headers })).response.status, 401);
+  const restored = await jsonRequest(shiftPath, { headers: { Authorization: `Bearer ${login.body.accessToken}` } });
+  assert.deepEqual(restored.body.shiftSummary, endedShift.body.shiftSummary);
 
   for (const alternative of ['end', 'reject']) {
     const raceDriver = await jsonRequest('/api/drivers', {

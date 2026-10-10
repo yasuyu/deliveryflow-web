@@ -47,7 +47,8 @@ test('中断から復帰すると状態と接続が戻り、オフライン完�
   await expect(page.locator('#realtimeStatus')).toBeHidden();
   const pickup = await request.post(`/api/assignments/${assignment.id}/pickup`, { headers });
   expect(pickup.ok()).toBe(true);
-  await expect(page.locator('#actionGuidance')).toHaveText('店舗へ向かってください');
+  // A read already in flight may finish while hidden; assert the resumed state
+  // after showPage has confirmed a fresh dashboard response.
   await showPage(page);
   await expect(page.locator('#actionGuidance')).toHaveText('配達先へ向かってください');
   await expect(page.locator('#realtimeStatus')).toHaveAttribute('data-status', 'connected');

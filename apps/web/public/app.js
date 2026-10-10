@@ -32,6 +32,13 @@ const historyFilterReset = document.querySelector('#historyFilterReset');
 const historyResultCount = document.querySelector('#historyResultCount');
 const historyLoadMore = document.querySelector('#historyLoadMore');
 const historyLoadError = document.querySelector('#historyLoadError');
+const shiftHistoryList = document.querySelector('#shiftHistoryList');
+const shiftHistoryReload = document.querySelector('#shiftHistoryReload');
+const shiftHistoryMore = document.querySelector('#shiftHistoryMore');
+const shiftHistoryStatus = document.querySelector('#shiftHistoryStatus');
+const shiftHistoryError = document.querySelector('#shiftHistoryError');
+const historicalShift = document.querySelector('#historicalShift');
+const historicalShiftReload = document.querySelector('#historicalShiftReload');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const currentTitle = document.querySelector('#currentTitle');
@@ -143,6 +150,13 @@ let bottomSheetDrag = null;
 let suppressBottomSheetClick = false;
 let autoAdvancingOfferId = null;
 let completedShiftSummary = null;
+let shiftHistoryState = { shifts: [], pagination: null };
+let shiftHistoryToken = null;
+let shiftHistoryLoading = false;
+let shiftHistoryRevision = 0;
+let shiftDetailRevision = 0;
+let shiftDetailLoading = false;
+let selectedShift = null;
 
 function syncVisualViewportLayout() {
   const layout = DeliveryFlowBottomSheet.visualViewportLayout(window.visualViewport, window.innerWidth);
@@ -286,6 +300,7 @@ function setSheetView(view, { focus = false } = {}) {
   sheetViewBar.classList.toggle('hidden', isDelivery);
   sheetViewTitle.textContent = view === 'activity' ? '実績・ランキング' : view === 'settings' ? '設定' : '';
   sheetContent.scrollTop = sheetScrollPositions[view];
+  if (view === 'activity' && driverToken && shiftHistoryToken !== driverToken && !shiftHistoryLoading) loadShiftHistory();
   if (focus) {
     (isDelivery ? sheetPanels.delivery : returnToDelivery)
       .focus({ preventScroll: true });
@@ -995,9 +1010,124 @@ function resetHistory() {
   renderHistory();
 }
 
+function resetShiftHistory() {
+  shiftHistoryRevision += 1;
+  shiftDetailRevision += 1;
+  shiftHistoryState = { shifts: [], pagination: null };
+  shiftHistoryToken = null;
+  shiftHistoryLoading = false;
+  shiftDetailLoading = false;
+  selectedShift = null;
+  shiftHistoryError.classList.add('hidden');
+  renderShiftHistory();
+}
+
+function renderShiftHistory() {
+  shiftHistoryReload.disabled = shiftHistoryLoading;
+  shiftHistoryMore.disabled = shiftHistoryLoading;
+  shiftHistoryMore.classList.toggle('hidden', !shiftHistoryState.pagination?.hasMore);
+  shiftHistoryStatus.textContent = shiftHistoryLoading ? '勤務履歴を読み込み中です。'
+    : shiftHistoryState.shifts.length ? `表示中の勤務 ${shiftHistoryState.shifts.length}件`
+      : shiftHistoryState.pagination?.hasMore ? 'この範囲に表示できるサマリーはありません。以前の勤務を読み込めます。'
+        : 'まだ勤務サマリーはありません。サマリー保存に対応する前の勤務は表示されません。';
+  shiftHistoryList.replaceChildren();
+  for (const shift of shiftHistoryState.shifts) {
+    const item = document.createElement('li');
+    const dates = document.createElement('strong');
+    dates.textContent = `${formatJapanTime(shift.startedAt)} → ${formatJapanTime(shift.endedAt)}`;
+    const metrics = document.createElement('span');
+    metrics.textContent = `${DeliveryFlowUi.formatShiftDuration(shift.durationSeconds)}・配達 ${shift.completedDeliveries}件・${shift.pointsEarned} pt`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button-secondary';
+    button.textContent = '勤務サマリーを開く';
+    button.disabled = shiftDetailLoading;
+    button.setAttribute('aria-label', `${formatJapanTime(shift.endedAt)}の勤務サマリーを開く`);
+    button.addEventListener('click', () => loadHistoricalShift(shift.id));
+    item.append(dates, metrics, button);
+    shiftHistoryList.append(item);
+  }
+  historicalShift.classList.toggle('hidden', !selectedShift);
+  historicalShiftReload.disabled = shiftDetailLoading;
+  if (!selectedShift) return;
+  const summary = selectedShift.shiftSummary;
+  document.querySelector('#historicalShiftDates').textContent = `${formatJapanTime(summary.startedAt)} → ${formatJapanTime(summary.endedAt)}`;
+  document.querySelector('#historicalShiftDuration').textContent = DeliveryFlowUi.formatShiftDuration(summary.durationSeconds);
+  document.querySelector('#historicalShiftDeliveries').textContent = `${summary.completedDeliveries}件`;
+  document.querySelector('#historicalShiftPoints').textContent = `${summary.pointsEarned} pt`;
+  document.querySelector('#historicalShiftFeedback').textContent = summary.localFeedback;
+  const review = selectedShift.aiReview;
+  document.querySelector('#historicalShiftAi').textContent = review?.status === 'AVAILABLE' ? review.feedback
+    : review?.status === 'PENDING' ? 'AIの振り返りを作成中です。少し待ってサマリーを再読み込みしてください。'
+      : review?.message || 'AIの振り返りは保存されていません。';
+}
+
+async function loadShiftHistory(append = false) {
+  if (!driverToken || shiftHistoryLoading) return;
+  const token = driverToken;
+  const revision = ++shiftHistoryRevision;
+  const cursor = append ? shiftHistoryState.pagination?.nextCursor : null;
+  if (append && cursor == null) return;
+  shiftHistoryLoading = true;
+  shiftHistoryError.classList.add('hidden');
+  renderShiftHistory();
+  try {
+    const { response, data } = await DeliveryFlowApi.readJson(`/api/shifts/history${cursor == null ? '' : `?cursor=${cursor}`}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (revision !== shiftHistoryRevision || token !== driverToken) return;
+    if (!response.ok) throw new Error(data.message || '勤務履歴を読み込めませんでした。');
+    shiftHistoryState = { ...data, shifts: append ? [...shiftHistoryState.shifts, ...data.shifts] : data.shifts };
+    shiftHistoryToken = token;
+  } catch (error) {
+    if (revision !== shiftHistoryRevision || token !== driverToken) return;
+    shiftHistoryError.textContent = `勤務履歴を読み込めませんでした。${error.message} 再読み込み、または以前の勤務の読み込みをもう一度お試しください。`;
+    shiftHistoryError.classList.remove('hidden');
+  } finally {
+    if (revision === shiftHistoryRevision && token === driverToken) {
+      shiftHistoryLoading = false;
+      renderShiftHistory();
+    }
+  }
+}
+
+async function loadHistoricalShift(id) {
+  if (!driverToken || shiftDetailLoading) return;
+  const token = driverToken;
+  const revision = ++shiftDetailRevision;
+  shiftDetailLoading = true;
+  shiftHistoryError.classList.add('hidden');
+  renderShiftHistory();
+  try {
+    const { response, data } = await DeliveryFlowApi.readJson(`/api/shifts/history/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (revision !== shiftDetailRevision || token !== driverToken) return;
+    if (!response.ok) throw new Error(data.message || '勤務サマリーを読み込めませんでした。');
+    selectedShift = data;
+    renderShiftHistory();
+    historicalShift.focus({ preventScroll: true });
+    historicalShift.scrollIntoView({ block: 'nearest' });
+  } catch (error) {
+    if (revision !== shiftDetailRevision || token !== driverToken) return;
+    shiftHistoryError.textContent = `勤務サマリーを読み込めませんでした。${error.message} 開くボタンからもう一度お試しください。`;
+    shiftHistoryError.classList.remove('hidden');
+  } finally {
+    if (revision === shiftDetailRevision && token === driverToken) {
+      shiftDetailLoading = false;
+      renderShiftHistory();
+    }
+  }
+}
+
+shiftHistoryReload.addEventListener('click', () => loadShiftHistory());
+shiftHistoryMore.addEventListener('click', () => loadShiftHistory(true));
+historicalShiftReload.addEventListener('click', () => { if (selectedShift) loadHistoricalShift(selectedShift.id); });
+
 async function performRefresh({ preserveMessage = false } = {}) {
   if (!driverToken) {
     resetHistory();
+    resetShiftHistory();
     mapStartedForSession = false;
     deliveryMap.disable();
     currentBrowserLocation = null;
@@ -1156,6 +1286,7 @@ registrationForm.addEventListener('submit', async (event) => {
     });
     if (!response.ok) throw new Error(registration.message || '配達員を登録できませんでした。');
     driverToken = registration.accessToken;
+    resetShiftHistory();
     pendingActionRetry = null;
     postClient.clear();
     completedShiftSummary = null;
@@ -1190,6 +1321,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
     if (!response.ok) throw new Error(login.message || 'ログインできませんでした。');
     driverToken = login.accessToken;
+    resetShiftHistory();
     pendingActionRetry = null;
     postClient.clear();
     completedShiftSummary = null;
@@ -1254,6 +1386,7 @@ async function handleAction(event) {
       actionResult = await request('/api/shifts/end', null, { idempotencyKey: shiftEndKey });
       completedShiftSummary = actionResult.shiftSummary || null;
       if (completedShiftSummary) completedShiftSummary.shiftEndKey = shiftEndKey;
+      resetShiftHistory();
     }
     if (action === 'offer') await request('/api/offers/current');
     if (action === 'logout') {
