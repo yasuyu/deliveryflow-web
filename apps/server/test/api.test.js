@@ -110,8 +110,8 @@ async function safetyDriver() {
   return { id: registration.body.driver.id, token, post, offer: offer.body };
 }
 
-async function startServer(port, reviewEnabled = true) {
-  serverProcess = spawn(process.execPath, ['--require', './scripts/test-support/openai-fetch.cjs', 'apps/server/src/main.js'], {
+async function startServer(port, reviewEnabled = true, reviewMode = 'success') {
+  serverProcess = spawn(process.execPath, ['--require', './scripts/test-support/gemini-fetch.cjs', 'apps/server/src/main.js'], {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -123,8 +123,9 @@ async function startServer(port, reviewEnabled = true) {
       DATABASE_IDLE_MODE: process.env.DATABASE_IDLE_MODE || 'false',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
       DEMO_RANKING_SEED: 'false',
-      OPENAI_API_KEY: reviewEnabled ? 'test-only-openai-key' : '',
-      OPENAI_MODEL: 'gpt-4.1-mini',
+      GEMINI_API_KEY: 'test-only-gemini-key',
+      GEMINI_FREE_TIER_CONFIRMED: String(reviewEnabled),
+      DELIVERYFLOW_TEST_GEMINI_MODE: reviewMode,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1104,7 +1105,7 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
   assert.match(available.body.feedback, /配達0件、0ポイント/);
   assert.match(available.body.feedback, /テスト呼出1/);
   assert.equal(results.every((result) => result.status === 200), true);
-  assert.equal(JSON.stringify(results).includes('test-only-openai-key'), false);
+  assert.equal(JSON.stringify(results).includes('test-only-gemini-key'), false);
   assert.deepEqual((await review(key)).body, available.body);
   assert.deepEqual((await readHistory()).body.aiReview, available.body);
   assert.deepEqual((await driver.post('/api/shifts/end', key)).body, ended.body);
@@ -1137,6 +1138,42 @@ test('AI振り返りは本人の確定実績だけを使い、同時送信・再
     assert.match(freeSummary.body.shiftSummary.localFeedback, /完了した配達は0件/);
     assert.deepEqual((await unconfiguredDriver.post('/api/shifts/end', disabledKey)).body, freeSummary.body);
     assert.equal((await review(disabledKey, unconfiguredDriver.token)).body.status, 'DISABLED');
+  } finally {
+    serverProcess.kill();
+    await once(serverProcess, 'exit');
+    await startServer(port);
+  }
+});
+
+test('Geminiの無料枠上限後も定型コメントと実績を保持し、再送・再起動で生成し直さない', async () => {
+  const port = Number(new URL(baseUrl).port);
+  serverProcess.kill();
+  await once(serverProcess, 'exit');
+  await startServer(port, true, 'quota');
+  try {
+    const driver = await safetyDriver();
+    const key = randomUUID();
+    const ended = await driver.post('/api/shifts/end', key);
+    const review = () => request('/api/shifts/review', {
+      method: 'POST', headers: { Authorization: `Bearer ${driver.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shiftEndKey: key }),
+    });
+    const failed = await review();
+    assert.equal(failed.status, 200);
+    assert.equal(failed.body.status, 'UNAVAILABLE');
+    assert.equal(JSON.stringify(failed).includes('test-only-gemini-key'), false);
+    assert.deepEqual((await review()).body, failed.body);
+    assert.deepEqual((await driver.post('/api/shifts/end', key)).body, ended.body);
+    const headers = { Authorization: `Bearer ${driver.token}` };
+    const history = await request('/api/shifts/history', { headers });
+    const detail = await request(`/api/shifts/history/${history.body.shifts[0].id}`, { headers });
+    assert.deepEqual(detail.body.shiftSummary, ended.body.shiftSummary);
+    assert.match(detail.body.shiftSummary.localFeedback, /完了した配達は0件/);
+    assert.deepEqual(detail.body.aiReview, failed.body);
+    serverProcess.kill();
+    await once(serverProcess, 'exit');
+    await startServer(port);
+    assert.deepEqual((await review()).body, failed.body);
   } finally {
     serverProcess.kill();
     await once(serverProcess, 'exit');

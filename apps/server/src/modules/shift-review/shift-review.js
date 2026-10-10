@@ -16,35 +16,54 @@ function createLocalShiftFeedback({ durationSeconds, completedDeliveries, points
   return `今回の勤務、お疲れさまでした。稼働時間は${duration}、完了した配達は${completedDeliveries}件、獲得ポイントは${pointsEarned}ポイントでした。${achievement}${nextStep}数字の大小だけで判断せず、今回の流れを次の学びにつなげてください。気になった操作を一つ振り返ると、次の勤務で意識する点が明確になります。`;
 }
 
-function createShiftFeedback({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || 'gpt-4.1-mini', fetchImpl = fetch, timeoutMilliseconds = 15_000 } = {}) {
+const disabledReview = Object.freeze({
+  status: 'DISABLED',
+  message: '無料プランの確認・設定が済むまでAIは使いません。「無料の振り返り」をご利用ください。',
+});
+const geminiModel = 'gemini-3.5-flash-lite';
+
+function createShiftFeedback({
+  apiKey = process.env.GEMINI_API_KEY,
+  freeTierConfirmed = process.env.GEMINI_FREE_TIER_CONFIRMED === 'true',
+  fetchImpl = fetch,
+  timeoutMilliseconds = 15_000,
+} = {}) {
   const key = apiKey?.trim();
+  // This is an operator confirmation, not a billing-status API check. Never enable
+  // it until this key's project has been verified to have no billing account.
+  const configured = Boolean(key) && freeTierConfirmed === true;
   return {
-    configured: Boolean(key),
+    configured,
+    disabledReview,
     async generate(summary) {
-      if (!key) return { status: 'DISABLED', message: 'AIの振り返りは未設定です。' };
+      if (!configured) return { ...disabledReview };
       try {
-        const response = await fetchImpl('https://api.openai.com/v1/responses', {
+        const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+          redirect: 'error',
           signal: AbortSignal.timeout(timeoutMilliseconds),
           body: JSON.stringify({
-            model,
-            store: false,
-            max_output_tokens: 600,
-            instructions: 'あなたは学習用配達アプリの振り返りアシスタントです。提示された勤務実績だけをもとに、日本語180〜220文字程度の短いフィードバックをプレーンテキストで返してください。努力をねぎらい、実績に触れ、次回に向けた具体的で無理のない提案を1つ添えてください。配達0件でも否定しないでください。速度競争や危険運転を勧めず、実績から分からない天候、走行距離、運転の安全性、他人との比較を捏造しないでください。見出しやMarkdownは不要です。',
-            input: JSON.stringify({
+            systemInstruction: { parts: [{ text: 'あなたは学習用配達アプリの振り返りアシスタントです。提示された勤務実績だけをもとに、日本語180〜220文字程度の短いフィードバックをプレーンテキストで返してください。努力をねぎらい、実績に触れ、次回に向けた具体的で無理のない提案を1つ添えてください。配達0件でも否定しないでください。速度競争や危険運転を勧めず、実績から分からない天候、走行距離、運転の安全性、他人との比較を捏造しないでください。見出しやMarkdownは不要です。' }] },
+            contents: [{ role: 'user', parts: [{ text: JSON.stringify({
               durationMinutes: Math.round(summary.durationSeconds / 60),
               completedDeliveries: summary.completedDeliveries,
               pointsEarned: summary.pointsEarned,
-            }),
+            }) }] }],
+            generationConfig: {
+              candidateCount: 1,
+              maxOutputTokens: 600,
+              thinkingConfig: { thinkingLevel: 'MINIMAL' },
+            },
           }),
         });
         if (!response.ok) return { ...unavailableReview };
         const data = await response.json();
-        if (data.status !== 'completed') return { ...unavailableReview };
-        const text = (data.output || []).filter((item) => item.type === 'message')
-          .flatMap((item) => item.content || []).filter((item) => item.type === 'output_text')
-          .map((item) => item.text).join('\n').replace(/\s+/gu, ' ').trim();
+        const candidate = data.candidates?.[0];
+        if (data.promptFeedback?.blockReason || candidate?.finishReason !== 'STOP') return { ...unavailableReview };
+        const text = (candidate.content?.parts || [])
+          .filter((part) => !part.thought && typeof part.text === 'string')
+          .map((part) => part.text).join('\n').replace(/\s+/gu, ' ').trim();
         // Never return provider diagnostics or an accidentally echoed credential.
         if (!text || text.includes(key)) return { ...unavailableReview };
         const characters = Array.from(text);

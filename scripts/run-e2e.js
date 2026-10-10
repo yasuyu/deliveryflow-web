@@ -88,7 +88,8 @@ async function main() {
       OFFER_CANDIDATE_LIMIT: '3',
       SCORE_BONUS_SIMULATED_NOW: '2026-09-14T12:00:00+09:00',
       DEMO_RANKING_SEED: 'false',
-      OPENAI_API_KEY: '',
+      GEMINI_API_KEY: '',
+      GEMINI_FREE_TIER_CONFIRMED: 'false',
       E2E_BASE_URL: `http://127.0.0.1:${port}`,
       E2E_DATABASE_PATH: path.join(directory, 'delivery.db'),
     };
