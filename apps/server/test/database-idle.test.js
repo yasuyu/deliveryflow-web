@@ -36,7 +36,7 @@ async function fixture(t, idleMode) {
     env: {
       ...process.env, DATABASE_PROVIDER: 'sqlite', DATABASE_URL: `file:./${name}`, PORT: String(port),
       DATABASE_IDLE_MODE: String(idleMode), DELIVERYFLOW_TEST_QUERY_LOG: queryLog,
-      DEMO_RANKING_SEED: 'false', OPENAI_API_KEY: '',
+      DEMO_RANKING_SEED: 'false', GEMINI_API_KEY: '', GEMINI_FREE_TIER_CONFIRMED: 'false',
     },
     stdio: 'ignore',
   });

@@ -70,7 +70,7 @@ Auto-Deployの表は推奨設定です。この利用環境の実際の選択状
 
 `PORT`はRenderから渡される値を使います。ローカル用の`APP_PORT`、`POSTGRES_HOST_PORT`、`.env.postgres`ファイルはRenderへ持ち込みません。既存のDockerイメージは起動時に環境変数を使ってPostgreSQLのMigrationを適用し、Node.jsサーバーを起動します。`npm start`はローカルの`.env`を読むため、Renderの起動コマンドには設定しません。
 
-初回は`OPENAI_API_KEY`を設定せず、追加課金のない定型振り返りを使用します。AIを使う場合は、公開後に必要性を確認してRenderのサーバー環境変数へ別途設定します。
+初回はAIキーを設定せず、追加課金のない定型振り返りを使用します。任意のGemini振り返りは、[無料プランの確認手順](gemini-free-setup.md)で課金設定のないFree Tierを確認してからRenderのサーバー環境変数へ設定します。確認できない間は`GEMINI_FREE_TIER_CONFIRMED=false`を維持します。以前の`OPENAI_API_KEY`は使用しません。
 
 ## 3. 公開する前に確認する
 
