@@ -7,6 +7,12 @@ const statusText = {
 
 const message = document.querySelector('#message');
 const registrationMessage = document.querySelector('#registrationMessage');
+const retryButtons = [document.querySelector('#requestRetry'), document.querySelector('#registrationRetry'), document.querySelector('#connectionRetry')];
+const connectionNotice = document.querySelector('#connectionNotice');
+const connectionMessage = document.querySelector('#connectionMessage');
+let retryRequest = null;
+let pendingActionRetry = null;
+const postClient = DeliveryFlowApi.createPostClient({ getToken: () => driverToken });
 const actions = document.querySelector('#actions');
 const detail = document.querySelector('#deliveryDetail');
 const card = document.querySelector('#deliveryCard');
@@ -129,6 +135,7 @@ let pageResumeTimer = null;
 let refreshPromise = null;
 let offlineQueue = [];
 let offlineQueueFlushing = false;
+let offlineQueueRetryAfter = 0;
 let offlineQueueNotice = '';
 let bottomSheetState = 'collapsed';
 let activeRankingPeriod = 'monthly';
@@ -268,6 +275,7 @@ new ResizeObserver(() => {
 function setSheetView(view, { focus = false } = {}) {
   sheetScrollPositions[sheetView] = sheetContent.scrollTop;
   sheetView = view;
+  updateConnectionNotice();
   bottomSheet.dataset.sheetView = view;
   Object.entries(sheetPanels).forEach(([name, panel]) => {
     const selected = name === view;
@@ -318,15 +326,45 @@ rankingPeriodTabs.forEach((tab) => {
 });
 
 function setMessage(text, kind = 'info', source = 'action') {
+  hideRequestRetry();
   message.textContent = text;
   message.className = `message message--${kind}`;
   message.hidden = !text;
   message.dataset.source = source;
+  connectionMessage.textContent = text;
 }
 
 function setRegistrationMessage(text = '') {
+  hideRequestRetry();
   registrationMessage.textContent = text;
   registrationMessage.classList.toggle('hidden', !text);
+}
+
+function hideRequestRetry() {
+  retryRequest = null;
+  retryButtons.forEach((button) => { button.hidden = true; });
+  updateConnectionNotice();
+}
+
+function showRequestRetry(callback, label = 'もう一度読み込む') {
+  retryRequest = pendingActionRetry?.callback || callback;
+  retryButtons.forEach((button) => { button.textContent = pendingActionRetry?.label || label; button.hidden = false; });
+  updateConnectionNotice();
+}
+
+function updateConnectionNotice() {
+  connectionNotice.hidden = !retryRequest || sheetView === 'delivery';
+}
+
+retryButtons.forEach((button) => button.addEventListener('click', async () => {
+  if (isLoading || !retryRequest) return;
+  const retry = retryRequest;
+  await retry();
+}));
+
+async function retryRefresh() {
+  setLoading(true);
+  try { await refresh({ preserveMessage: true }); } finally { setLoading(false); }
 }
 
 function queueDriverId() {
@@ -376,7 +414,7 @@ function renderOfflineQueueStatus() {
     offlineQueueStatus.dataset.status = navigator.onLine ? 'waiting' : 'offline';
   }
   offlineQueueStatus.append(text);
-  if (blocked) {
+  if (!offlineQueueFlushing) {
     const controls = document.createElement('div');
     controls.className = 'offline-queue__actions';
     const retry = document.createElement('button');
@@ -384,12 +422,14 @@ function renderOfflineQueueStatus() {
     retry.className = 'button-secondary';
     retry.dataset.queueAction = 'retry';
     retry.textContent = '最新状態で再送する';
+    retry.disabled = isLoading || !navigator.onLine;
     const discard = document.createElement('button');
     discard.type = 'button';
     discard.className = 'button-secondary';
     discard.dataset.queueAction = 'discard';
     discard.textContent = 'この操作を取り消す';
-    controls.append(retry, discard);
+    controls.append(retry);
+    if (blocked) controls.append(discard);
     offlineQueueStatus.append(controls);
   }
   if (offlineQueueNotice) {
@@ -401,13 +441,14 @@ function renderOfflineQueueStatus() {
 
 function setLoading(loading) {
   isLoading = loading;
-  document.querySelectorAll('[data-action], [data-location-action], button[type="submit"], #historyFilterReset').forEach((element) => {
+  document.querySelectorAll('[data-action], [data-location-action], button[type="submit"], #historyFilterReset, #requestRetry, #registrationRetry, #connectionRetry').forEach((element) => {
     element.disabled = loading || element.dataset.alwaysDisabled === 'true';
   });
   actions.setAttribute('aria-busy', String(loading));
   if (state) renderActionDock();
   renderOfflineQueueStatus();
   historyLoadMore.disabled = loading || historyLoading;
+  if (!loading && pendingActionRetry) showRequestRetry(pendingActionRetry.callback);
   if (!loading && realtimeRefreshQueued && !refreshPromise) {
     realtimeRefreshQueued = false;
     queueMicrotask(() => refresh({ preserveMessage: true }));
@@ -504,38 +545,8 @@ function connectRealtime() {
   });
 }
 
-async function request(url, body = null, { idempotencyKey = crypto.randomUUID() } = {}) {
-  const options = {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${driverToken}`,
-      'Idempotency-Key': idempotencyKey,
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  };
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(url, options);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const error = new Error(data.message || 'リクエストを処理できませんでした。');
-        error.code = data.code || 'REQUEST_FAILED';
-        error.status = response.status;
-        throw error;
-      }
-      return data;
-    } catch (error) {
-      if (!(error instanceof TypeError)) throw error;
-      if (attempt === 1) {
-        const networkError = new Error('サーバーへ接続できません。');
-        networkError.network = true;
-        networkError.cause = error;
-        throw networkError;
-      }
-    }
-  }
+async function request(url, body = null, options = {}) {
+  return postClient.post(url, body, options);
 }
 
 async function flushOfflineQueue() {
@@ -552,12 +563,19 @@ async function flushOfflineQueue() {
     ));
     saveOfflineQueue(result.remaining);
     if (result.reason === 'complete') {
+      offlineQueueRetryAfter = 0;
       offlineQueueNotice = `${result.completed.length}件の操作を送信しました。`;
-      await refresh({ preserveMessage: true });
-      setMessage(`${result.completed.length}件のオフライン操作を送信しました。`, 'success');
+      if (await refresh({ preserveMessage: true })) {
+        setMessage(`${result.completed.length}件のオフライン操作を送信しました。`, 'success');
+      }
     } else if (result.reason === 'blocked') {
       offlineQueueNotice = 'サーバー側の状態を確認してから、再送または取り消しを選んでください。';
       await refresh({ preserveMessage: true });
+    } else if (result.reason === 'network') {
+      // Replayed writes also notify WebSocket clients. Avoid a notification ->
+      // refresh -> resend loop while only the HTTP response keeps failing.
+      offlineQueueRetryAfter = Date.now() + DeliveryFlowApi.timeoutMs;
+      offlineQueueNotice = '通信結果を確認できません。操作は保存されています。接続を確認して再送できます。';
     }
   } finally {
     offlineQueueFlushing = false;
@@ -713,9 +731,9 @@ function renderActionDock() {
   offerDeadline.classList.toggle('offer-deadline--expired', view.expired);
   DeliveryFlowUi.updateMarkup(actions, DeliveryFlowUi.renderActions(view));
   actions.querySelectorAll('button').forEach((element) => {
-    element.disabled = isLoading || offlineQueue.length > 0;
+    element.disabled = isLoading || offlineQueue.length > 0 || Boolean(pendingActionRetry);
   });
-  logoutButton.disabled = isLoading || state.driver.status !== 'OFFLINE';
+  logoutButton.disabled = isLoading || Boolean(pendingActionRetry) || state.driver.status !== 'OFFLINE';
   logoutButton.dataset.alwaysDisabled = String(state.driver.status !== 'OFFLINE');
   document.querySelector('#logoutHint').textContent = state.driver.status === 'OFFLINE'
     ? 'この端末からログアウトできます。' : '勤務中です。退勤するとログアウトできます。';
@@ -949,19 +967,20 @@ async function refresh(options = {}) {
   }
 }
 
-async function fetchHistoryPage(filters, token, cursor = null) {
+async function fetchHistoryPage(filters, token, cursor = null, deadline = Date.now() + DeliveryFlowApi.timeoutMs) {
   const parameters = new URLSearchParams(filters);
   if (cursor !== null) parameters.set('cursor', cursor);
-  const response = await fetch(`/api/deliveries/history?${parameters}`, { headers: { Authorization: `Bearer ${token}` } });
-  const data = await response.json().catch(() => ({}));
+  const { response, data } = await DeliveryFlowApi.readJson(`/api/deliveries/history?${parameters}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }, { deadline });
   if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
   return data;
 }
 
-async function fetchVisibleHistory(filters, token, pageCount) {
-  let result = await fetchHistoryPage(filters, token);
+async function fetchVisibleHistory(filters, token, pageCount, deadline) {
+  let result = await fetchHistoryPage(filters, token, null, deadline);
   for (let page = 1; page < pageCount && result.pagination.hasMore; page += 1) {
-    const next = await fetchHistoryPage(filters, token, result.pagination.nextCursor);
+    const next = await fetchHistoryPage(filters, token, result.pagination.nextCursor, deadline);
     result = { ...next, deliveries: [...result.deliveries, ...next.deliveries] };
   }
   return result;
@@ -990,17 +1009,20 @@ async function performRefresh({ preserveMessage = false } = {}) {
     return;
   }
   try {
-    const response = await fetch('/api/dashboard', {
+    const deadline = Date.now() + DeliveryFlowApi.timeoutMs;
+    const { response, data } = await DeliveryFlowApi.readJson('/api/dashboard', {
       headers: { Authorization: `Bearer ${driverToken}` },
-    });
+    }, { deadline });
     if (response.status === 401) {
       disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
+      pendingActionRetry = null;
+      postClient.clear();
+      hideRequestRetry();
       completedShiftSummary = null;
       return performRefresh();
     }
-    const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.code}: ${data.message}`);
     state = data;
     loadOfflineQueue();
@@ -1012,16 +1034,14 @@ async function performRefresh({ preserveMessage = false } = {}) {
     const token = driverToken;
     const authenticatedHeaders = { Authorization: `Bearer ${driverToken}` };
     const [history, scoreResponse, rankingResponse] = await Promise.all([
-      fetchVisibleHistory(appliedHistoryFilters, token, historyPageCount),
-      fetch('/api/drivers/me/score', { headers: authenticatedHeaders }),
-      fetch('/api/drivers/ranking', { headers: authenticatedHeaders }),
+      fetchVisibleHistory(appliedHistoryFilters, token, historyPageCount, deadline),
+      DeliveryFlowApi.readJson('/api/drivers/me/score', { headers: authenticatedHeaders }, { deadline }),
+      DeliveryFlowApi.readJson('/api/drivers/ranking', { headers: authenticatedHeaders }, { deadline }),
     ]);
-    const [score, ranking] = await Promise.all([
-      scoreResponse.json().catch(() => ({})),
-      rankingResponse.json().catch(() => ({})),
-    ]);
-    if (!scoreResponse.ok) throw new Error(`${score.code}: ${score.message}`);
-    if (!rankingResponse.ok) throw new Error(`${ranking.code}: ${ranking.message}`);
+    const score = scoreResponse.data;
+    const ranking = rankingResponse.data;
+    if (!scoreResponse.response.ok) throw new Error(`${score.code}: ${score.message}`);
+    if (!rankingResponse.response.ok) throw new Error(`${ranking.code}: ${ranking.message}`);
     if (historyRevision === historyRequestRevision && driverToken === token) historyState = history;
     scoreState = score;
     rankingState = ranking;
@@ -1030,18 +1050,35 @@ async function performRefresh({ preserveMessage = false } = {}) {
     renderRanking();
     renderHistory();
     connectRealtime();
-    if (message.dataset.source === 'refresh' || (!preserveMessage && message.classList.contains('message--info'))) setMessage('');
-    if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing) {
+    if (message.dataset.source === 'refresh' || (!preserveMessage && message.classList.contains('message--info'))) {
+      setMessage('');
+      setRegistrationMessage();
+    }
+    if (pendingActionRetry) {
+      setMessage('操作の結果をまだ確認できていません。再確認してから次の操作へ進んでください。', 'error');
+      showRequestRetry(pendingActionRetry.callback);
+    }
+    if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing
+        && Date.now() >= offlineQueueRetryAfter) {
       queueMicrotask(flushOfflineQueue);
     }
     return true;
   } catch (error) {
-    setMessage(`読み込みに失敗しました。${error.message}`, 'error', 'refresh');
+    const text = `最新の状況を読み込めませんでした。${error.message}`;
+    setMessage(text, 'error', 'refresh');
+    if (workflow.classList.contains('hidden')) {
+      setAuthView('login');
+      loginForm.elements.driverId.value = localStorage.getItem('deliveryFlowDriverId') || '';
+      registrationCard.classList.remove('hidden');
+      setRegistrationMessage(text);
+    }
+    showRequestRetry(retryRefresh);
     return false;
   }
 }
 
 async function autoAdvanceExpiredOffer() {
+  if (pendingActionRetry) return;
   if (!DeliveryFlowUi.shouldAutoAdvanceOffer(state, Date.now(), {
     online: navigator.onLine,
     loading: isLoading,
@@ -1106,28 +1143,33 @@ authTabs.forEach((tab) => {
 
 registrationForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (isLoading) return;
   authView = 'register';
   const { name, pin } = Object.fromEntries(new FormData(registrationForm));
   setRegistrationMessage('配達員を登録しています。');
   setLoading(true);
   try {
-    const response = await fetch('/api/drivers', {
+    const { response, data: registration } = await DeliveryFlowApi.readJson('/api/drivers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, pin }),
     });
-    const registration = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(registration.message || '配達員を登録できませんでした。');
     driverToken = registration.accessToken;
+    pendingActionRetry = null;
+    postClient.clear();
     completedShiftSummary = null;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(registration.driver.id));
     connectRealtime();
     setRegistrationMessage();
-    await refresh({ preserveMessage: true });
-    setMessage(`登録しました。あなたの配達員IDは ${registration.driver.id} です。`, 'success');
+    if (await refresh({ preserveMessage: true })) {
+      setMessage(`登録しました。あなたの配達員IDは ${registration.driver.id} です。`, 'success');
+    }
   } catch (error) {
-    setRegistrationMessage(`登録に失敗しました。${error.message}`);
+    setRegistrationMessage(error.network
+      ? `${error.message}登録は完了している可能性があります。自動で再登録はしません。配達員IDが分かる場合はログインしてください。`
+      : `登録に失敗しました。${error.message}`);
   } finally {
     setLoading(false);
   }
@@ -1135,28 +1177,31 @@ registrationForm.addEventListener('submit', async (event) => {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (isLoading) return;
   authView = 'login';
   const { driverId, pin } = Object.fromEntries(new FormData(loginForm));
   setRegistrationMessage('ログインしています。');
   setLoading(true);
   try {
-    const response = await fetch('/api/login', {
+    const { response, data: login } = await DeliveryFlowApi.readJson('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ driverId: Number(driverId), pin }),
     });
-    const login = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(login.message || 'ログインできませんでした。');
     driverToken = login.accessToken;
+    pendingActionRetry = null;
+    postClient.clear();
     completedShiftSummary = null;
     localStorage.setItem('deliveryFlowAccessToken', driverToken);
     localStorage.setItem('deliveryFlowDriverId', String(login.driver.id));
     connectRealtime();
     setRegistrationMessage();
-    await refresh({ preserveMessage: true });
-    setMessage('ログインしました。', 'success');
+    if (await refresh({ preserveMessage: true })) setMessage('ログインしました。', 'success');
   } catch (error) {
-    setRegistrationMessage(`ログインに失敗しました。${error.message}`);
+    setRegistrationMessage(error.network
+      ? `${error.message}同じ配達員IDとPINでもう一度ログインできます。`
+      : `ログインに失敗しました。${error.message}`);
   } finally {
     setLoading(false);
   }
@@ -1166,6 +1211,7 @@ async function handleAction(event) {
   const button = event.target.closest('button[data-action]');
   const action = button?.dataset.action;
   if (!action || isLoading) return;
+  if (pendingActionRetry && pendingActionRetry.action !== action) return;
   if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) return;
   if (action.startsWith('accept:') && DeliveryFlowUi.getActionView(state).expired) {
     renderActionDock();
@@ -1184,18 +1230,27 @@ async function handleAction(event) {
   };
   const actionName = actionLabels[action.split(':')[0]];
   const queueEntry = DeliveryFlowOfflineActions.create(action, { idempotencyKey: crypto.randomUUID() });
+  if (queueEntry) queueEntry.idempotencyKey = postClient.keyFor(DeliveryFlowOfflineActions.endpoint(queueEntry));
   setLoading(true);
   setMessage(`${actionName}を処理しています。`, 'loading');
   try {
     let actionResult;
     if (action === 'start') {
       await request('/api/shifts/start');
+      pendingActionRetry = null;
       completedShiftSummary = null;
-      const demoResult = await saveLocation({ source: 'DEMO' });
-      currentBrowserLocation = demoResult.coordinates;
+      try {
+        const demoResult = await saveLocation({ source: 'DEMO' });
+        currentBrowserLocation = demoResult.coordinates;
+      } catch (error) {
+        await refresh({ preserveMessage: true });
+        setMessage(`稼働は開始しました。デモ位置の更新結果を確認できませんでした。${error.message}`, 'error');
+        showRequestRetry(() => useDemoLocationButton.click(), 'デモ位置を再更新する');
+        return;
+      }
     }
     if (action === 'end') {
-      const shiftEndKey = crypto.randomUUID();
+      const shiftEndKey = postClient.keyFor('/api/shifts/end');
       actionResult = await request('/api/shifts/end', null, { idempotencyKey: shiftEndKey });
       completedShiftSummary = actionResult.shiftSummary || null;
       if (completedShiftSummary) completedShiftSummary.shiftEndKey = shiftEndKey;
@@ -1206,6 +1261,8 @@ async function handleAction(event) {
       disconnectRealtime();
       localStorage.removeItem('deliveryFlowAccessToken');
       driverToken = null;
+      pendingActionRetry = null;
+      postClient.clear();
       completedShiftSummary = null;
       authView = 'login';
       await refresh();
@@ -1233,7 +1290,8 @@ async function handleAction(event) {
         return;
       }
     }
-    await refresh({ preserveMessage: true });
+    pendingActionRetry = null;
+    const refreshed = await refresh({ preserveMessage: true });
     if (action === 'end' && completedShiftSummary) {
       setSheetView('delivery');
       setBottomSheetState('expanded');
@@ -1249,11 +1307,20 @@ async function handleAction(event) {
     const completionMessage = action === 'end' && completedShiftSummary
       ? `退勤しました。配達 ${completedShiftSummary.completedDeliveries}件、${completedShiftSummary.pointsEarned}ポイントを記録しました。`
       : action.startsWith('complete:') ? '配達が完了しました。' : `${actionName}が完了しました。`;
+    if (!refreshed) return;
     setMessage(actionResult?.scoreAward
       ? `${completionMessage}${awardDetails}、合計 +${actionResult.scoreAward.points}ポイント獲得しました。`
       : completionMessage, 'success');
   } catch (error) {
-    setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
+    if (error.network) {
+      setMessage(`${actionName}の結果を確認できませんでした。${error.message}処理は完了している可能性があります。`, 'error');
+      pendingActionRetry = { action, callback: () => handleAction({ target: button }), label: `${actionName}の結果を再確認する` };
+      showRequestRetry(pendingActionRetry.callback);
+    } else {
+      pendingActionRetry = null;
+      if (error.status === 401) await refresh({ preserveMessage: true });
+      setMessage(`${actionName}に失敗しました。${error.message}`, 'error');
+    }
   } finally {
     setLoading(false);
   }
@@ -1301,7 +1368,8 @@ offlineQueueStatus.addEventListener('click', async (event) => {
       return;
     }
     saveOfflineQueue(DeliveryFlowOfflineActions.retry(offlineQueue));
-    offlineQueueNotice = '同じIdempotency-Keyで再送します。';
+    offlineQueueRetryAfter = 0;
+    offlineQueueNotice = '保存した操作を重複させずに再送します。';
     await flushOfflineQueue();
     return;
   }
@@ -1317,12 +1385,12 @@ offlineQueueStatus.addEventListener('click', async (event) => {
 
 weatherSimulatorForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (isLoading) return;
   setLoading(true);
   setMessage('天候を更新しています。', 'loading');
   try {
     const result = await request('/api/simulator/weather', { condition: weatherCondition.value });
-    await refresh({ preserveMessage: true });
-    setMessage(result.message, 'success');
+    if (await refresh({ preserveMessage: true })) setMessage(result.message, 'success');
   } catch (error) {
     setMessage(`天候の更新に失敗しました。${error.message}`, 'error');
   } finally {
@@ -1331,12 +1399,11 @@ weatherSimulatorForm.addEventListener('submit', async (event) => {
 });
 
 async function saveLocation(location) {
-  const response = await fetch('/api/drivers/me/location', {
+  const { response, data: result } = await DeliveryFlowApi.readJson('/api/drivers/me/location', {
     method: 'PUT',
     headers: { Authorization: `Bearer ${driverToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(location),
   });
-  const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`${result.code}: ${result.message}`);
   return result;
 }
@@ -1348,8 +1415,9 @@ useDemoLocationButton.addEventListener('click', async () => {
   try {
     const result = await saveLocation({ source: 'DEMO' });
     currentBrowserLocation = result.coordinates;
-    await refresh({ preserveMessage: true });
-    setMessage('京都市役所付近のデモ位置へ切り替えました。個人の現在地は使用していません。', 'success');
+    if (await refresh({ preserveMessage: true })) {
+      setMessage('京都市役所付近のデモ位置へ切り替えました。個人の現在地は使用していません。', 'success');
+    }
   } catch (error) {
     setMessage(`デモ位置へ切り替えられませんでした。${error.message}`, 'error');
   } finally {
@@ -1384,8 +1452,9 @@ updateLocationButton.addEventListener('click', async () => {
       latitude: roundedLocation.latitude,
       longitude: roundedLocation.longitude,
     };
-    await refresh({ preserveMessage: true });
-    setMessage('約100m単位に丸めた現在地を保存し、店舗までの直線距離を再計算しました。', 'success');
+    if (await refresh({ preserveMessage: true })) {
+      setMessage('約100m単位に丸めた現在地を保存し、店舗までの直線距離を再計算しました。', 'success');
+    }
   } catch (error) {
     const denied = error?.code === 1;
     setMessage(denied

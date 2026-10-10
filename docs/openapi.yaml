@@ -3,6 +3,11 @@ info:
   title: DeliveryFlow API
   version: 0.12.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API。勤務・配達の状態確認と更新は直列化可能なDBトランザクションで実行し、同時操作でも矛盾した状態を保存しない。
+x-browser-request-policy:
+  timeoutMilliseconds: 30000
+  automaticQueueRetryCooldownMilliseconds: 30000
+  description: ブラウザーのAPI通信は応答本文まで30秒で待機を終了する。画面全体の更新は履歴の追加ページも含め同じ期限を共有する。タイムアウトはサーバー処理の取消やロールバックを意味しない。
+  retries: 受諾・受取・配達完了は同じIdempotency-Keyで端末キューから再送する。稼働開始・退勤などの未確認操作はページを開いたまま同じキーで再確認する。キーは配達員・API・本文ごとに分け、応答確定後とログイン時に破棄する。登録・ログインは自動再送しない。
 x-websocket:
   endpoint: /api/realtime
   subprotocol: deliveryflow.realtime.v1

@@ -71,6 +71,7 @@
           </form>
         </section>
         <p id="registrationMessage" class="message hidden" role="alert" aria-live="assertive"></p>
+        <button id="registrationRetry" type="button" class="button-secondary" hidden>もう一度読み込む</button>
       </div>
     </section>
 
@@ -100,6 +101,10 @@
         <strong id="sheetViewTitle"></strong>
       </div>
       <div id="sheetContent" class="sheet-content">
+      <section id="connectionNotice" class="card" hidden aria-label="通信の再試行">
+        <p id="connectionMessage" class="message message--error" role="status" aria-live="polite"></p>
+        <button id="connectionRetry" type="button" class="button-secondary" hidden>もう一度読み込む</button>
+      </section>
       <section id="deliveryPanel" class="sheet-panel" role="region" aria-label="配達" tabindex="0">
         <section id="idleCard" class="card delivery-empty">
           <span class="delivery-empty__icon" aria-hidden="true">↗</span>
@@ -213,6 +218,7 @@
         <div id="compactDelivery" class="compact-delivery hidden"></div>
         <section id="offlineQueueStatus" class="offline-queue hidden" aria-live="polite"></section>
         <p id="message" class="message message--info" role="status" aria-live="polite"></p>
+        <button id="requestRetry" type="button" class="button-secondary" hidden>もう一度読み込む</button>
         <div id="actions"></div>
       </section>
       </div>
@@ -223,6 +229,7 @@
   <script src="/bottom-sheet.js"></script>
   <script src="/delivery-ui.js"></script>
   <script src="/offline-actions.js"></script>
+  <script src="/api-client.js"></script>
   <script src="/vendor/leaflet.js"></script>
   <script src="/delivery-map.js"></script>
   <script src="/app.js"></script>
