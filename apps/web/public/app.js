@@ -135,6 +135,7 @@ let pageResumeTimer = null;
 let refreshPromise = null;
 let offlineQueue = [];
 let offlineQueueFlushing = false;
+let offlineQueueRetryAfter = 0;
 let offlineQueueNotice = '';
 let bottomSheetState = 'collapsed';
 let activeRankingPeriod = 'monthly';
@@ -562,6 +563,7 @@ async function flushOfflineQueue() {
     ));
     saveOfflineQueue(result.remaining);
     if (result.reason === 'complete') {
+      offlineQueueRetryAfter = 0;
       offlineQueueNotice = `${result.completed.length}件の操作を送信しました。`;
       if (await refresh({ preserveMessage: true })) {
         setMessage(`${result.completed.length}件のオフライン操作を送信しました。`, 'success');
@@ -570,6 +572,9 @@ async function flushOfflineQueue() {
       offlineQueueNotice = 'サーバー側の状態を確認してから、再送または取り消しを選んでください。';
       await refresh({ preserveMessage: true });
     } else if (result.reason === 'network') {
+      // Replayed writes also notify WebSocket clients. Avoid a notification ->
+      // refresh -> resend loop while only the HTTP response keeps failing.
+      offlineQueueRetryAfter = Date.now() + DeliveryFlowApi.timeoutMs;
       offlineQueueNotice = '通信結果を確認できません。操作は保存されています。接続を確認して再送できます。';
     }
   } finally {
@@ -1053,7 +1058,8 @@ async function performRefresh({ preserveMessage = false } = {}) {
       setMessage('操作の結果をまだ確認できていません。再確認してから次の操作へ進んでください。', 'error');
       showRequestRetry(pendingActionRetry.callback);
     }
-    if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing) {
+    if (offlineQueue[0]?.status === 'pending' && navigator.onLine && !offlineQueueFlushing
+        && Date.now() >= offlineQueueRetryAfter) {
       queueMicrotask(flushOfflineQueue);
     }
     return true;
@@ -1362,6 +1368,7 @@ offlineQueueStatus.addEventListener('click', async (event) => {
       return;
     }
     saveOfflineQueue(DeliveryFlowOfflineActions.retry(offlineQueue));
+    offlineQueueRetryAfter = 0;
     offlineQueueNotice = '保存した操作を重複させずに再送します。';
     await flushOfflineQueue();
     return;
