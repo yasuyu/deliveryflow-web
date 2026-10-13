@@ -1,9 +1,16 @@
 const path = require('node:path');
 const { parseArguments, loadConfig, createDockerRunner, backupDatabase, restoreDatabase } = require('./postgresql-backup');
 
-const tables = ['Driver', 'Store', 'Order', 'Offer', 'Assignment', 'ScoreRule', 'ScoreEvent', 'IdempotencyKey', '_prisma_migrations'];
-const tableSnapshots = tables.map((table) => `'${table}', (SELECT json_build_object('count', count(*), 'digest', md5(coalesce(string_agg(to_jsonb(t)::text, E'\\n' ORDER BY t.id), ''))) FROM "${table}" t)`);
-const snapshotSql = `SELECT json_build_object(${tableSnapshots.join(', ')}, 'sequences', (SELECT coalesce(json_agg(json_build_object('name', sequencename, 'value', last_value) ORDER BY sequencename), '[]') FROM pg_sequences WHERE schemaname = 'public'));`;
+// Discover public tables so old archives and newly added award tables can both
+// be verified. Identifiers come from the catalog and are quoted with format(%I).
+const snapshotSql = `SELECT (
+  COALESCE((SELECT jsonb_object_agg(table_name,
+    ((xpath('/row/snapshot/text()', query_to_xml(
+      format('SELECT json_build_object(''count'', count(*), ''digest'', md5(coalesce(string_agg(to_jsonb(t)::text, chr(10) ORDER BY t.id), ''''))) AS snapshot FROM public.%I t', table_name),
+      false, true, '')))[1]::text)::jsonb)
+    FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'), '{}'::jsonb)
+  || jsonb_build_object('sequences', (SELECT coalesce(json_agg(json_build_object('name', sequencename, 'value', last_value) ORDER BY sequencename), '[]') FROM pg_sequences WHERE schemaname = 'public'))
+)::json;`;
 
 async function snapshot(config, run, database) {
   const json = await run(['exec', '-T', 'db', 'psql', `--username=${config.POSTGRES_USER}`, `--dbname=${database}`,

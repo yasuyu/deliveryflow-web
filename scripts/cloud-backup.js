@@ -146,7 +146,7 @@ async function main() {
     console.log(`クラウドバックアップを保存しました: data/cloud-backups/${path.basename(file)}`);
   } else {
     const result = await verifyCloudBackup(config, source, createRestoreRunner());
-    console.log('クラウドバックアップ・新しいローカルDBへの復元検証が成功しました（全9テーブル・ID採番・認証情報・履歴・ポイントの一致）。');
+    console.log('クラウドバックアップ・新しいローカルDBへの復元検証が成功しました（全テーブル・ID採番・認証情報・履歴・ポイントの一致）。');
     console.log(`クラウドバックアップ: data/cloud-backups/${path.basename(result.file)}`);
     console.log(`復元用DB: ${result.database}`);
     console.log(`配達員 ${result.counts.drivers}件 / 完了配達 ${result.counts.deliveries}件 / 加点履歴 ${result.counts.scoreEvents}件`);

@@ -67,8 +67,13 @@ ScoreRule（加点ルールのマスター）
 | `estimatedPoints` | オファー作成時に固定した見込み点 |
 | `scoreBreakdown` | 加点コード・表示名・点数のJSONスナップショット |
 | `distanceToPickupMeters` | 候補選定時に保存した店舗までの直線距離（メートル） |
+| `priorityRank` | 作成時に固定した優先候補の順位。旧版のオファーはnull |
 
-`orderId + driverId`は一意です。1つのOrderに複数の候補Offerを作り、最初に受諾されたOffer以外は`WITHDRAWN`になります。
+`orderId + driverId`は一意です。優先順位付きの新しいオファーは1つだけ`PENDING`、後続は`QUEUED`にします。DBの部分一意索引でも同じ注文の複数提示を防ぎます。受諾されたOffer以外は`WITHDRAWN`になります。
+
+### MonthlyAwardPeriod / MonthlyAward
+
+終了した暦月の集計期間と確定時刻を保存し、配達員・月につき月間称号を1件保存します。獲得順位・月間ポイント・称号を保持し、確定済みの月を再計算しません。0ポイントは付与対象外です。候補評価にはこの履歴の最高順位を使います。終了月の補完は保存済みScoreEventから行い、起動時・月替わり後の初回利用時に処理します。月ごとに別のトランザクションで確定し、途中失敗時は確定済みの月から再開します。既存の配達員・履歴・ポイントは変更しません。
 
 ### Assignment
 

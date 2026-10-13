@@ -64,6 +64,12 @@
       };
     }
     if (state.driver.status === 'IDLE') {
+      if (state.offerWaiting) return { ...view,
+        guidance: 'オファーの順番を待っています',
+        destination: '優先候補への確認が終わるまでお待ちください。',
+        primary: { label: '最新の状況を確認する', action: 'refresh' },
+        secondary: [{ label: '退勤する', action: 'end' }],
+      };
       return { ...view, guidance: '新しいオファーを確認しましょう',
         destination: state.location?.status === 'MISSING'
           ? '設定から現在地を更新すると、店舗までの距離を確認できます。'
