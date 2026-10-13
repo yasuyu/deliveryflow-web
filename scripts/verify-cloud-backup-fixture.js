@@ -32,8 +32,9 @@ INSERT INTO "MonthlyAward" ("driverId", month, rank, points, title) VALUES (1, '
   const result = await verifyCloudBackup({ PGUSER: 'deliveryflow_backup', PGDATABASE: database }, source, local,
     path.resolve(__dirname, '..', 'data', 'cloud-backup-verification'));
   if (result.counts.drivers !== 1 || result.counts.deliveries !== 1 || result.counts.scoreEvents !== 1) throw new Error('検証用データの件数が一致しません。');
-  if (result.snapshot.MonthlyAward.count !== 1 || result.snapshot.MonthlyAwardPeriod.count !== 1) throw new Error('称号履歴の復元結果が一致しません。');
-  console.log('PostgreSQL 18のクラウドバックアップ処理・全11テーブル・月間称号履歴・未使用シーケンスを含むID採番・既存DB保護を確認しました。');
+  const report = JSON.parse(await fs.readFile(`${result.file}.verification.json`, 'utf8'));
+  if (report.snapshot.MonthlyAward.count !== 1 || report.snapshot.MonthlyAwardPeriod.count !== 1) throw new Error('称号履歴の復元結果が一致しません。');
+  console.log('PostgreSQL 18のクラウドバックアップ処理・全アプリテーブル11件と移行管理テーブル・月間称号履歴・未使用シーケンスを含むID採番・既存DB保護を確認しました。');
   console.log(`検証用バックアップ: data/cloud-backup-verification/${path.basename(result.file)}`);
   console.log(`復元用DB: ${result.database}`);
 }
