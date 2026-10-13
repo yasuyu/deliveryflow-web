@@ -694,15 +694,16 @@ function buildDriverTitle(lifetimeScore) {
 }
 
 async function driverScore(driverId) {
-  const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const windowStartedAt = new Date(now.getTime() - scoreWindowDays * 24 * 60 * 60 * 1000);
   const [driver, currentScore, recentEvents, bestMonthlyAward] = await prisma.$transaction([
     prisma.driver.findUnique({ where: { id: driverId }, select: { score: true } }),
     prisma.scoreEvent.aggregate({
-      where: { driverId, createdAt: { gte: windowStartedAt } },
+      where: { driverId, createdAt: { gte: windowStartedAt, lte: now } },
       _sum: { points: true },
     }),
     prisma.scoreEvent.findMany({
-      where: { driverId },
+      where: { driverId, createdAt: { lte: now } },
       include: {
         assignment: { include: { order: { include: { store: true } } } },
       },
@@ -792,7 +793,7 @@ function currentJapanMonthWindow(now = new Date()) {
 function addMonthlyTitles(period) {
   const withTitle = (entry) => ({
     ...entry,
-    monthlyTitle: monthlyRankingTitles.get(entry.rank) || null,
+    monthlyTitle: entry.score > 0 ? monthlyRankingTitles.get(entry.rank) || null : null,
   });
   return {
     leaders: period.leaders.map(withTitle),
@@ -801,18 +802,19 @@ function addMonthlyTitles(period) {
 }
 
 async function driverRanking(driverId) {
-  const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
-  const month = currentJapanMonthWindow();
+  const now = new Date();
+  const windowStartedAt = new Date(now.getTime() - scoreWindowDays * 24 * 60 * 60 * 1000);
+  const month = currentJapanMonthWindow(now);
   const [drivers, currentScores, monthlyScores] = await prisma.$transaction([
     prisma.driver.findMany({ select: { id: true, name: true, score: true } }),
     prisma.scoreEvent.groupBy({
       by: ['driverId'],
-      where: { createdAt: { gte: windowStartedAt } },
+      where: { createdAt: { gte: windowStartedAt, lte: now } },
       _sum: { points: true },
     }),
     prisma.scoreEvent.groupBy({
       by: ['driverId'],
-      where: { createdAt: { gte: month.startsAt, lt: month.endsAt } },
+      where: { createdAt: { gte: month.startsAt, lt: month.endsAt, lte: now } },
       _sum: { points: true },
     }),
   ]);

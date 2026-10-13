@@ -12,6 +12,7 @@
     "demo:reset": "node --env-file=.env scripts/demo-data.js --confirm-demo-reset",
     "check": "npm run check:local-reliability && npm run check:elevation && node --check apps/server/src/main.js && node --check apps/server/src/modules/shift-review/shift-review.js && node --check apps/server/src/modules/shift-review/shift-history.js && node --check apps/server/src/modules/demo/demo-fixtures.js && node --check apps/server/src/modules/location/location.js && node --check apps/server/src/modules/matching/matching.js && node --check apps/server/src/modules/realtime/realtime.js && node --check apps/server/src/modules/score/score-bonuses.js && node --check apps/web/public/route-preview.js && node --check apps/web/public/bottom-sheet.js && node --check apps/web/public/delivery-ui.js && node --check apps/web/public/offline-actions.js && node --check apps/web/public/api-client.js && node --check apps/web/public/delivery-map.js && node --check apps/web/public/app.js && node --check scripts/demo-data.js && node --check scripts/studio-postgresql.js && node --check scripts/run-e2e.js && node --check playwright.config.js && node --check apps/web/e2e/delivery.spec.js",
     "test": "node --test",
+    "audit:deps": "npm audit --audit-level=high",
     "test:e2e": "node scripts/run-e2e.js",
     "data:elevation": "node scripts/build-elevation-data.js",
     "check:elevation": "node --check apps/server/src/modules/elevation/elevation.js && node --check apps/web/public/elevation-profile.js && node --check scripts/build-elevation-data.js",
@@ -33,7 +34,7 @@
   "dependencies": {
     "@neon/config": "^1.8.6",
     "@neon/env": "^1.5.3",
-    "@prisma/client": "^6.19.1",
+    "@prisma/client": "6.19.3",
     "leaflet": "1.9.4",
     "ngraph.graph": "20.1.2",
     "ngraph.path": "1.6.1",
@@ -41,11 +42,16 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "prisma": "^6.19.1"
+    "prisma": "6.19.3"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    }
   },
   "allowScripts": {
-    "prisma@6.19.1": true,
-    "@prisma/client@6.19.1": true,
-    "@prisma/engines@6.19.1": true
+    "prisma@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true
   }
 }
