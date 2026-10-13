@@ -373,7 +373,7 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   assert.equal(ranking.body.monthly.me.monthlyTitle, '月間チャンピオン');
   assert.equal(
     ranking.body.monthly.leaders.filter((entry) => entry.rank === 2).every(
-      (entry) => entry.monthlyTitle === '月間準優勝',
+      (entry) => entry.monthlyTitle === null,
     ),
     true,
   );

@@ -231,6 +231,7 @@ deliveryflow-web/
 | `npm start` | SQLite版アプリを起動 |
 | `npm run check` | JavaScriptの構文を確認 |
 | `npm test` | 一時DBで全自動テストを実行 |
+| `npm run audit:deps` | 開発用を含む依存関係の既知の脆弱性を検査 |
 | `npm run db:migrate` | SQLiteへMigrationを適用 |
 | `npm run db:generate` | Prisma Clientを再生成 |
 | `npm run db:studio` | SQLiteをPrisma Studioで確認 |
@@ -243,6 +244,8 @@ deliveryflow-web/
 | `npm run load-test` | ローカルのヘルスチェックへ負荷試験 |
 
 ## 設定ファイル
+
+Prismaと依存ライブラリの固定バージョン・更新時の確認事項は[依存パッケージの保守](docs/dependency-maintenance.md)に記載しています。
 
 `.env`はPCごとのローカル設定です。Gitには保存されません。
 
@@ -307,6 +310,8 @@ PostgreSQL版の受付時間を変える場合は、起動に使う`.env.postgre
 - ページ自体のオフライン起動や地図タイルの保存は対象外です。すでに開いている配達画面で一時的な切断を補います。
 
 ## スコアの仕組み
+
+画面の14日間スコア・14日間ランキング・オファーの優先順位は、集計時点から遡った14日間の加点を使います。今月ランキングは日本時間の月初から集計時点までです。未来日時の記録は期間内スコアと最近の加点表示へ含めません。今月の暫定称号も、確定する月間称号と同じく、正のポイントを持つ1〜3位だけに表示します。
 
 オファーの候補は、店舗から近い順に最大N人（標準3人）を選んでから、次の優先度の降順に並べます。距離は店舗までの直線距離です。
 

@@ -127,6 +127,38 @@ test('14日ポイントだけを使い、累計・古い点・未来点・遠い
   assert.equal(await f.db.offer.count({ where: { orderId: shown.body.orderId, status: 'WITHDRAWN' } }), 2);
 });
 
+test('表示する14日ポイントと今月ランキングも未来の実績を集計しない', async (t) => {
+  const f = await fixture(t);
+  const score = await f.request(0, '/api/drivers/me/score');
+  assert.equal(score.body.currentScore, 100);
+  assert.ok(score.body.recentEvents.every(({ createdAt }) => Date.parse(createdAt) <= Date.now()));
+  const ranking = await f.request(0, '/api/drivers/ranking');
+  assert.equal(ranking.body.current.me.score, 100);
+  const previousPointsAreThisMonth = Date.now() - 15 * 86400000 >= japanMonthWindow().startsAt.getTime();
+  assert.equal(ranking.body.monthly.me.score, previousPointsAreThisMonth ? 1000100 : 100);
+});
+
+test('今月0ポイントには暫定称号を表示せず、正の同点には同じ称号を表示する', async (t) => {
+  const f = await fixture(t);
+  const month = japanMonthWindow();
+  await f.db.scoreEvent.updateMany({ where: { createdAt: { gte: month.startsAt } }, data: { points: 0 } });
+  const empty = await f.request(0, '/api/drivers/ranking');
+  assert.equal(empty.body.monthly.me.rank, 1);
+  assert.equal(empty.body.monthly.me.monthlyTitle, null);
+  const currentEvents = await f.db.scoreEvent.findMany({
+    where: { driverId: { in: f.drivers.slice(0, 2).map(({ id }) => id) }, createdAt: { gte: month.startsAt, lte: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+  for (const driver of f.drivers.slice(0, 2)) {
+    const event = currentEvents.find(({ driverId }) => driverId === driver.id);
+    await f.db.scoreEvent.update({ where: { id: event.id }, data: { points: 100 } });
+  }
+  const tied = await f.request(2, '/api/drivers/ranking');
+  assert.equal(tied.body.monthly.me.rank, 3);
+  assert.equal(tied.body.monthly.me.monthlyTitle, null);
+  assert.deepEqual(tied.body.monthly.leaders.slice(0, 2).map(({ monthlyTitle }) => monthlyTitle), ['月間チャンピオン', '月間チャンピオン']);
+});
+
 test('辞退後は同じ注文を次候補へ渡し、待機順位は再起動で保持する', async (t) => {
   const f = await fixture(t);
   const offers = await f.active();
