@@ -201,7 +201,39 @@ async function main() {
     if (latest.body.driver.status !== 'OFFLINE') assert.equal((await racePost('/api/shifts/end', 'end')).response.status, 200);
   }
 
-  console.log('PostgreSQL smoke test passed');
+  const candidates = [];
+  for (let index = 0; index < 3; index++) {
+    const user = await jsonRequest('/api/drivers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'CI PostgreSQL優先候補', pin: '246810' }),
+    });
+    const auth = { Authorization: `Bearer ${user.body.accessToken}` };
+    const submit = (pathname, key) => jsonRequest(pathname, {
+      method: 'POST', headers: { ...auth, 'Idempotency-Key': `pg-priority-${index}-${key}` },
+    });
+    assert.equal((await submit('/api/shifts/start', 'start')).response.status, 200);
+    assert.equal((await jsonRequest('/api/drivers/me/location', {
+      method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'DEMO' }),
+    })).response.status, 200);
+    candidates.push({ auth, submit });
+  }
+  const first = await candidates[0].submit('/api/offers/current', 'show');
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.priorityRank, 1);
+  const waiting = await jsonRequest('/api/dashboard', { headers: candidates[1].auth });
+  assert.equal(waiting.body.offerWaiting, true);
+  assert.equal((await candidates[1].submit('/api/offers/current', 'waiting')).response.status, 404);
+  assert.equal((await candidates[0].submit(`/api/offers/${first.body.id}/reject`, 'reject')).response.status, 200);
+  const second = await candidates[1].submit('/api/offers/current', 'show');
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.orderId, first.body.orderId);
+  assert.equal(second.body.priorityRank, 2);
+  const awardHistory = await jsonRequest('/api/drivers/me/monthly-awards', { headers: candidates[1].auth });
+  assert.equal(awardHistory.response.status, 200);
+  assert.deepEqual(awardHistory.body.awards, []);
+  for (const candidate of candidates) assert.equal((await candidate.submit('/api/shifts/end', 'end')).response.status, 200);
+  console.log('PostgreSQL smoke test passed (including sequential priority offers and monthly awards API)');
 }
 
 main().catch((error) => {

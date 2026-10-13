@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+test('オファー待機候補は順番待ちを表示し、確認・退勤できる', () => {
+  const { getActionView } = require('../public/delivery-ui');
+  const view = getActionView({ driver: { status: 'IDLE' }, offerWaiting: true });
+  assert.match(view.guidance, /順番/);
+  assert.equal(view.primary.action, 'refresh');
+  assert.equal(view.secondary[0].action, 'end');
+});
 const {
   escapeHtml, formatShiftDuration, getActionView, nextRankingPeriod, offerCountdown, renderActions,
   shouldAutoAdvanceOffer, updateMarkup,

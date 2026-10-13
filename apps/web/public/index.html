@@ -164,9 +164,19 @@
           <progress id="titleProgress" max="100" value="0" aria-label="次の称号までの進捗"></progress>
         </div>
       </section>
+      <section class="card" aria-label="獲得した月間称号">
+        <p class="eyebrow">MONTHLY AWARDS</p><h2>獲得した月間称号</h2>
+        <p id="bestMonthlyAward">獲得済みの月間称号はありません。</p>
+        <p>月が終わった後に順位を確定し、1位・2位・3位の称号を履歴として残します。同点は同順位です。</p>
+        <button type="button" id="monthlyAwardsReload" class="button-secondary">称号履歴を再読み込み</button>
+        <p id="monthlyAwardsStatus" role="status"></p>
+        <p id="monthlyAwardsError" class="history-load-error hidden" role="alert"></p>
+        <ol id="monthlyAwardsList" class="history-list"></ol>
+        <button type="button" id="monthlyAwardsMore" class="button-secondary hidden">以前の称号を読み込む</button>
+      </section>
       <section class="card ranking-card">
         <p class="eyebrow">DRIVER RANKING</p><h2>配達員ランキング</h2>
-        <p>同じスコアは同順位として、上位10名とあなたの順位を表示します。</p>
+        <p>同じスコアは同順位として、上位10名とあなたの順位を表示します。今月の称号は途中順位による表示で、月終了後に獲得履歴へ確定します。</p>
         <div class="ranking-period-tabs" role="tablist" aria-label="ランキング期間">
           <button id="monthlyRankingTab" type="button" role="tab" aria-selected="true" aria-controls="monthlyRankingPanel" data-ranking-period="monthly">今月</button>
           <button id="currentRankingTab" type="button" role="tab" aria-selected="false" aria-controls="currentRankingPanel" data-ranking-period="current" tabindex="-1">14日間</button>

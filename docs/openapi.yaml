@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.12.0
+  version: 0.13.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API。勤務・配達の状態確認と更新は直列化可能なDBトランザクションで実行し、同時操作でも矛盾した状態を保存しない。
 x-browser-request-policy:
   timeoutMilliseconds: 30000
@@ -100,6 +100,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  offerWaiting: { type: boolean, description: 現在提示されたオファーがなく、優先順位による待機候補として登録されている場合true }
                   offer:
                     type: object
                     nullable: true
@@ -144,7 +145,7 @@ paths:
   /api/simulator/weather:
     post:
       summary: PC内の天候シミュレーターを晴れまたは雨へ切り替える
-      description: 未表示の保留オファーだけを再計算する。表示済みまたは受諾済みのオファーに保存したスコア内訳は変更しない。アプリ再起動時はCLEARへ戻る。
+      description: 未表示のPENDING・QUEUEDオファーだけを再計算する。表示済みまたは受諾済みのオファーに保存したスコア内訳は変更しない。アプリ再起動時はCLEARへ戻る。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -203,7 +204,7 @@ paths:
     get:
       summary: ログイン中の配達員のスコア、称号、加点履歴を取得する
       responses:
-        '200': { description: 直近14日スコア、累計スコア、現在と次の称号、進捗、直近20件の加点履歴 }
+        '200': { description: 直近14日スコア、累計スコア、現在と次の累計称号、進捗、直近20件の加点履歴、bestMonthlyAward（獲得済みの最高月間称号のmonth・rank・title、未獲得はnull） }
         '401': { description: Bearerトークンが不正 }
   /api/drivers/ranking:
     get:
@@ -212,6 +213,43 @@ paths:
       responses:
         '200': { description: 対象月、今月・直近14日・全期間の上位10名、ログイン中の配達員の順位、月間称号、累計称号 }
         '401': { description: Bearerトークンが不正 }
+  /api/drivers/me/monthly-awards:
+    get:
+      summary: 本人の獲得済み月間称号を取得する
+      description: 日本時間の終了月を起動時・月替わり後の初回利用時に確定する。0ポイントは対象外、同点は競技順位方式で同順位全員に付与。過去月は保存済み加点履歴から補完し、確定後に上書きしない。月の降順で20件ずつ返す。cursorは前ページのnextCursor。別配達員のカーソルは404。Cache-Control=no-store。
+      parameters:
+        - { name: cursor, in: query, schema: { type: integer, minimum: 1, maximum: 2147483647 } }
+      responses:
+        '200':
+          description: 獲得月・順位・ポイント・称号と、次のページ情報
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [awards, pagination]
+                properties:
+                  awards:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [id, month, rank, points, title]
+                      properties:
+                        id: { type: integer }
+                        month: { type: string, example: '2026-09' }
+                        rank: { type: integer, minimum: 1, maximum: 3 }
+                        points: { type: integer, minimum: 1 }
+                        title: { type: string, enum: [月間チャンピオン, 月間準優勝, 月間トップ3] }
+                  pagination:
+                    type: object
+                    required: [pageSize, hasMore, nextCursor]
+                    properties:
+                      pageSize: { type: integer, enum: [20] }
+                      hasMore: { type: boolean }
+                      nextCursor: { type: integer, nullable: true }
+        '400': { description: cursorの形式が不正 }
+        '401': { description: 認証なし }
+        '404': { description: 本人のカーソルが存在しない }
   /api/shifts/start:
     post:
       summary: 稼働を開始する OFFLINE to IDLE
@@ -328,6 +366,7 @@ paths:
   /api/offers/current:
     post:
       summary: 現在のオファーを確認する IDLE to OFFERED
+      description: 店舗に近い最大N人を選び、直近14日ポイント/100＋過去の最高月間称号の評価値（1位3・2位2・3位1・未獲得0）−店舗までの距離m/100で順位を決める。同評価は距離、次にID順。1人だけPENDINGで提示し、後続はQUEUEDとしてDBに保存する。辞退・期限切れ・退勤で次の有効候補へ提示する。待機候補は404で、ダッシュボードのofferWaiting=trueを確認できる。累計ポイントの称号は優先度へ使用しない。旧版の作成済みオファーは維持する。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -343,6 +382,7 @@ paths:
                     properties:
                       id: { type: integer }
                       status: { type: string, enum: [PENDING] }
+                      priorityRank: { type: integer, nullable: true, minimum: 1 }
                       acceptanceSeconds: { type: integer, minimum: 1, example: 30 }
                       order: { $ref: '#/components/schemas/Order' }
         '404': { description: オファーなし }
@@ -357,7 +397,7 @@ paths:
   /api/offers/{offerId}/accept:
     post:
       summary: オファーを受諾する
-      description: DriverをOFFEREDからBUSY、OfferをPENDINGからACCEPTED、OrderをOFFERINGからASSIGNEDへ変更する。他の保留OfferはWITHDRAWNになる。
+      description: DriverをOFFEREDからBUSY、OfferをPENDINGからACCEPTED、OrderをOFFERINGからASSIGNEDへ変更する。他のPENDING・QUEUED OfferはWITHDRAWNになる。待機候補は受諾できない。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - name: offerId
@@ -370,7 +410,7 @@ paths:
   /api/offers/{offerId}/reject:
     post:
       summary: オファーを辞退する
-      description: DriverをOFFEREDからIDLE、OfferをPENDINGからREJECTEDへ変更する。候補が尽きたOrderはCREATEDへ戻る。
+      description: DriverをOFFEREDからIDLE、OfferをPENDINGからREJECTEDへ変更する。次の有効なQUEUED候補をPENDINGへ進め、候補が尽きたOrderはCREATEDへ戻る。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - name: offerId

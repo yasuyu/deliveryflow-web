@@ -42,6 +42,16 @@ const historicalShiftReload = document.querySelector('#historicalShiftReload');
 const currentScore = document.querySelector('#currentScore');
 const lifetimeScore = document.querySelector('#lifetimeScore');
 const currentTitle = document.querySelector('#currentTitle');
+const bestMonthlyAward = document.querySelector('#bestMonthlyAward');
+const monthlyAwardsList = document.querySelector('#monthlyAwardsList');
+const monthlyAwardsStatus = document.querySelector('#monthlyAwardsStatus');
+const monthlyAwardsError = document.querySelector('#monthlyAwardsError');
+const monthlyAwardsReload = document.querySelector('#monthlyAwardsReload');
+const monthlyAwardsMore = document.querySelector('#monthlyAwardsMore');
+let monthlyAwardsState = { awards: [], pagination: null };
+let monthlyAwardsLoading = false;
+let monthlyAwardsToken = null;
+let monthlyAwardsRevision = 0;
 const nextTitle = document.querySelector('#nextTitle');
 const titleProgress = document.querySelector('#titleProgress');
 const monthlyRankingList = document.querySelector('#monthlyRanking');
@@ -301,6 +311,7 @@ function setSheetView(view, { focus = false } = {}) {
   sheetViewTitle.textContent = view === 'activity' ? '実績・ランキング' : view === 'settings' ? '設定' : '';
   sheetContent.scrollTop = sheetScrollPositions[view];
   if (view === 'activity' && driverToken && shiftHistoryToken !== driverToken && !shiftHistoryLoading) loadShiftHistory();
+  if (view === 'activity' && driverToken && monthlyAwardsToken !== driverToken && !monthlyAwardsLoading) loadMonthlyAwards();
   if (focus) {
     (isDelivery ? sheetPanels.delivery : returnToDelivery)
       .focus({ preventScroll: true });
@@ -761,6 +772,9 @@ function renderScore() {
   currentScore.textContent = String(scoreState.currentScore);
   lifetimeScore.textContent = String(scoreState.lifetimeScore);
   currentTitle.textContent = scoreState.title.current.name;
+  bestMonthlyAward.textContent = scoreState.bestMonthlyAward
+    ? `最高の獲得称号: ${scoreState.bestMonthlyAward.title}（${scoreState.bestMonthlyAward.month}）`
+    : '獲得済みの月間称号はありません。';
   titleProgress.value = scoreState.title.progressPercent;
   nextTitle.textContent = scoreState.title.next
     ? `次の「${scoreState.title.next.name}」まで、あと${scoreState.title.next.pointsNeeded}ポイント`
@@ -894,6 +908,7 @@ function render() {
   document.querySelector('#idleDescription').textContent = state.driver.status === 'OFFLINE'
     ? '準備ができたら、下のボタンから稼働を開始してください。'
     : 'オファーを確認すると、報酬・受取場所・届け先がここに表示されます。';
+  if (state.offerWaiting) document.querySelector('#idleDescription').textContent = '優先候補への確認が終わるまで、オファーの順番をお待ちください。';
   const showShiftSummary = state.driver.status === 'OFFLINE' && completedShiftSummary;
   lastShiftSummary.classList.toggle('hidden', !showShiftSummary);
   if (showShiftSummary) {
@@ -1011,6 +1026,12 @@ function resetHistory() {
 }
 
 function resetShiftHistory() {
+  monthlyAwardsRevision++;
+  monthlyAwardsState = { awards: [], pagination: null };
+  monthlyAwardsToken = null;
+  monthlyAwardsLoading = false;
+  monthlyAwardsError.classList.add('hidden');
+  renderMonthlyAwards();
   shiftHistoryRevision += 1;
   shiftDetailRevision += 1;
   shiftHistoryState = { shifts: [], pagination: null };
@@ -1121,6 +1142,56 @@ async function loadHistoricalShift(id) {
 }
 
 shiftHistoryReload.addEventListener('click', () => loadShiftHistory());
+function renderMonthlyAwards() {
+  monthlyAwardsReload.disabled = monthlyAwardsLoading;
+  monthlyAwardsMore.disabled = monthlyAwardsLoading;
+  monthlyAwardsMore.classList.toggle('hidden', !monthlyAwardsState.pagination?.hasMore);
+  monthlyAwardsStatus.textContent = monthlyAwardsLoading ? '称号履歴を読み込み中です。'
+    : monthlyAwardsState.awards.length ? `表示中の称号 ${monthlyAwardsState.awards.length}件`
+      : 'まだ獲得した月間称号はありません。';
+  monthlyAwardsList.replaceChildren();
+  for (const award of monthlyAwardsState.awards) {
+    const item = document.createElement('li');
+    const heading = document.createElement('strong');
+    heading.textContent = `${award.month} · ${award.title}`;
+    const detail = document.createElement('span');
+    detail.textContent = `${award.rank}位 · ${award.points}ポイント`;
+    item.append(heading, detail);
+    monthlyAwardsList.append(item);
+  }
+}
+
+async function loadMonthlyAwards(append = false) {
+  if (!driverToken || monthlyAwardsLoading) return;
+  const token = driverToken;
+  const cursor = append ? monthlyAwardsState.pagination?.nextCursor : null;
+  if (append && cursor == null) return;
+  const revision = ++monthlyAwardsRevision;
+  monthlyAwardsLoading = true;
+  monthlyAwardsError.classList.add('hidden');
+  renderMonthlyAwards();
+  try {
+    const { response, data } = await DeliveryFlowApi.readJson(
+      `/api/drivers/me/monthly-awards${cursor == null ? '' : `?cursor=${cursor}`}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (revision !== monthlyAwardsRevision || token !== driverToken) return;
+    if (!response.ok) throw new Error(data.message || '称号履歴を読み込めませんでした。');
+    monthlyAwardsState = { ...data, awards: append ? [...monthlyAwardsState.awards, ...data.awards] : data.awards };
+    monthlyAwardsToken = token;
+  } catch (error) {
+    if (revision !== monthlyAwardsRevision || token !== driverToken) return;
+    monthlyAwardsError.textContent = `称号履歴を読み込めませんでした。${error.message}`;
+    monthlyAwardsError.classList.remove('hidden');
+  } finally {
+    if (revision === monthlyAwardsRevision && token === driverToken) {
+      monthlyAwardsLoading = false;
+      renderMonthlyAwards();
+    }
+  }
+}
+monthlyAwardsReload.addEventListener('click', () => loadMonthlyAwards());
+monthlyAwardsMore.addEventListener('click', () => loadMonthlyAwards(true));
 shiftHistoryMore.addEventListener('click', () => loadShiftHistory(true));
 historicalShiftReload.addEventListener('click', () => { if (selectedShift) loadHistoricalShift(selectedShift.id); });
 

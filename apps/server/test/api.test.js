@@ -434,7 +434,7 @@ test('配達の状態遷移をAPI経由で完了できる', async () => {
   database.close();
 });
 
-test('店舗に近い3人へ同じオファーを送り、最初の受諾で残りを取り下げる', async () => {
+test('店舗に近い3人を候補にし、優先候補だけへ提示して受諾時に待機候補を取り下げる', async () => {
   const drivers = [];
   const locations = [
     [35.0093, 135.7684],
@@ -465,12 +465,19 @@ test('店舗に近い3人へ同じオファーを送り、最初の受諾で残�
   database.prepare('UPDATE Driver SET locationUpdatedAt = ? WHERE id = ?')
     .run(Date.now() - 5 * 60 * 1000, drivers[1].id);
 
-  const firstOffer = await drivers[0].post('/api/offers/current', 'nearest-show-first');
+  await request('/api/dashboard', { headers: { Authorization: `Bearer ${drivers[0].token}` } });
+  const pending = database.prepare(
+    "SELECT driverId, orderId FROM Offer WHERE driverId IN (?, ?, ?) AND status = 'PENDING' ORDER BY id DESC",
+  ).get(...drivers.slice(0, 3).map(({ id }) => id));
+  const first = drivers.find(({ id }) => id === pending.driverId);
+  const waiting = drivers.find(({ id }) => id !== first.id);
+  const firstOffer = await first.post('/api/offers/current', 'nearest-show-first');
   assert.equal(firstOffer.status, 200);
   assert.ok(firstOffer.body.distanceToPickupMeters >= 0);
-  const secondOffer = await drivers[1].post('/api/offers/current', 'nearest-show-second');
-  assert.equal(secondOffer.status, 200);
-  assert.equal(secondOffer.body.orderId, firstOffer.body.orderId);
+  const secondOffer = await waiting.post('/api/offers/current', 'nearest-show-second');
+  assert.equal(secondOffer.status, 404);
+  const waitingDashboard = await request('/api/dashboard', { headers: { Authorization: `Bearer ${waiting.token}` } });
+  assert.equal(waitingDashboard.body.offerWaiting, true);
 
   const offers = database.prepare(
     'SELECT driverId, status, distanceToPickupMeters FROM Offer WHERE orderId = ? ORDER BY distanceToPickupMeters, driverId',
@@ -481,23 +488,25 @@ test('店舗に近い3人へ同じオファーを送り、最初の受諾で残�
     drivers.slice(0, 3).map((driver) => driver.id).sort((left, right) => left - right),
   );
   assert.equal(offers.some((offer) => offer.driverId === drivers[3].id), false);
-  assert.equal(offers.every((offer) => offer.status === 'PENDING'), true);
+  assert.equal(offers.filter((offer) => offer.status === 'PENDING').length, 1);
+  assert.equal(offers.filter((offer) => offer.status === 'QUEUED').length, 2);
 
-  const accepted = await drivers[0].post(`/api/offers/${firstOffer.body.id}/accept`, 'nearest-accept');
+  const accepted = await first.post(`/api/offers/${firstOffer.body.id}/accept`, 'nearest-accept');
   assert.equal(accepted.status, 200);
   assert.equal(accepted.body.driver.status, 'BUSY');
 
   const settledOffers = database.prepare(
     'SELECT driverId, status FROM Offer WHERE orderId = ? ORDER BY driverId',
   ).all(firstOffer.body.orderId);
-  assert.deepEqual(settledOffers.map((offer) => offer.status), ['ACCEPTED', 'WITHDRAWN', 'WITHDRAWN']);
-  const secondDriver = database.prepare('SELECT status FROM Driver WHERE id = ?').get(drivers[1].id);
+  assert.equal(settledOffers.filter(({ status }) => status === 'ACCEPTED').length, 1);
+  assert.equal(settledOffers.filter(({ status }) => status === 'WITHDRAWN').length, 2);
+  const secondDriver = database.prepare('SELECT status FROM Driver WHERE id = ?').get(waiting.id);
   assert.equal(secondDriver.status, 'IDLE');
   database.close();
 
   const assignmentId = accepted.body.assignment.id;
-  await drivers[0].post(`/api/assignments/${assignmentId}/pickup`, 'nearest-pickup');
-  await drivers[0].post(`/api/assignments/${assignmentId}/complete`, 'nearest-complete');
+  await first.post(`/api/assignments/${assignmentId}/pickup`, 'nearest-pickup');
+  await first.post(`/api/assignments/${assignmentId}/complete`, 'nearest-complete');
   for (let index = 0; index < drivers.length; index += 1) {
     const ended = await drivers[index].post('/api/shifts/end', `nearest-end-${index}`);
     assert.equal(ended.status, 200);

@@ -22,6 +22,8 @@ INSERT INTO "Order" ("storeId", "pickupName", "dropoffName", status) VALUES (1, 
 INSERT INTO "Assignment" ("orderId", "driverId", "deliveredAt") VALUES (1, 1, NOW());
 INSERT INTO "ScoreEvent" ("driverId", "assignmentId", points, reason, breakdown) VALUES (1, 1, 150, 'fixture', '[{"label":"日本語","points":150}]');
 INSERT INTO "IdempotencyKey" (key, endpoint, "driverId", response, "statusCode") VALUES ('fixture', '/api/shifts/end', 1, '{"shiftSummary":{"pointsEarned":150}}', 200);
+INSERT INTO "MonthlyAwardPeriod" (month, "startsAt", "endsAt") VALUES ('2026-08', '2026-07-31T15:00:00Z', '2026-08-31T15:00:00Z');
+INSERT INTO "MonthlyAward" ("driverId", month, rank, points, title) VALUES (1, '2026-08', 1, 150, '月間チャンピオン');
 `);
   await local(['exec', '-T', 'db', 'psql', '--username=deliveryflow_backup', `--dbname=${database}`, '--no-psqlrc', '--set=ON_ERROR_STOP=1'],
     { inputText: statements.join('\n') });
@@ -30,7 +32,8 @@ INSERT INTO "IdempotencyKey" (key, endpoint, "driverId", response, "statusCode")
   const result = await verifyCloudBackup({ PGUSER: 'deliveryflow_backup', PGDATABASE: database }, source, local,
     path.resolve(__dirname, '..', 'data', 'cloud-backup-verification'));
   if (result.counts.drivers !== 1 || result.counts.deliveries !== 1 || result.counts.scoreEvents !== 1) throw new Error('検証用データの件数が一致しません。');
-  console.log('PostgreSQL 18のクラウドバックアップ処理・全9テーブル・未使用シーケンスを含むID採番・既存DB保護を確認しました。');
+  if (result.snapshot.MonthlyAward.count !== 1 || result.snapshot.MonthlyAwardPeriod.count !== 1) throw new Error('称号履歴の復元結果が一致しません。');
+  console.log('PostgreSQL 18のクラウドバックアップ処理・全11テーブル・月間称号履歴・未使用シーケンスを含むID採番・既存DB保護を確認しました。');
   console.log(`検証用バックアップ: data/cloud-backup-verification/${path.basename(result.file)}`);
   console.log(`復元用DB: ${result.database}`);
 }

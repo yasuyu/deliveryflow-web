@@ -17,7 +17,8 @@ const {
   locationStatus,
   normalizedLocation,
 } = require('./modules/location/location');
-const { nearestDrivers } = require('./modules/matching/matching');
+const { nearestDrivers, prioritizeCandidates } = require('./modules/matching/matching');
+const { japanMonthWindow, createMonthlyAwardMaintenance, listMonthlyAwards } = require('./modules/score/monthly-awards');
 const { databaseIdleModeFromEnv, createLocationMaintenance } = require('./modules/location/location-maintenance');
 const { elevationProfile } = require('./modules/elevation/elevation');
 const { createRealtimeHub } = require('./modules/realtime/realtime');
@@ -52,6 +53,7 @@ const driverTitles = [
   { code: 'GOLD', name: 'ゴールド', minimumScore: 3000 },
 ];
 const loginFailures = new Map();
+const monthlyAwardMaintenance = createMonthlyAwardMaintenance(databaseTransaction);
 let simulatedWeatherCondition = 'CLEAR';
 const startedAt = Date.now();
 const metrics = {
@@ -382,6 +384,7 @@ async function authenticateAccessToken(accessToken) {
   const driver = await prisma.driver.findUnique({ where: { accessTokenHash } });
   if (!driver) throw new ApiError(401, 'UNAUTHORIZED', '配達員が見つかりません');
   await locationMaintenance.onActivity();
+  await monthlyAwardMaintenance.onActivity();
   return clearExpiredDriverLocation(driver);
 }
 
@@ -453,7 +456,7 @@ async function recoverInterruptedDelivery(client, driver, endpoint) {
 
 async function createNextOffer(driver, client = prisma) {
   const existing = await client.offer.count({
-    where: { driverId: driver.id, status: 'PENDING' },
+    where: { driverId: driver.id, status: { in: ['PENDING', 'QUEUED'] } },
   });
   if (existing) return;
 
@@ -479,13 +482,29 @@ async function createNextOffer(driver, client = prisma) {
       shiftStartedAt: { not: null },
       latitude: { not: null },
       longitude: { not: null },
-      offers: { none: { status: 'PENDING' } },
+      offers: { none: { status: { in: ['PENDING', 'QUEUED'] } } },
     },
   });
   const candidates = nearestDrivers(
     eligibleDrivers.filter((candidate) => locationStatus(candidate) === 'AVAILABLE'), store, offerCandidateLimit,
   );
   if (!candidates.some((candidate) => candidate.id === driver.id)) return;
+
+  const now = new Date();
+  const ids = candidates.map(({ id }) => id);
+  const [recentScores, awards] = await Promise.all([
+    client.scoreEvent.groupBy({
+      by: ['driverId'],
+      where: { driverId: { in: ids }, createdAt: {
+        gte: new Date(now.getTime() - scoreWindowDays * 24 * 60 * 60 * 1000), lte: now,
+      } },
+      _sum: { points: true },
+    }),
+    client.monthlyAward.groupBy({ by: ['driverId'], where: { driverId: { in: ids } }, _min: { rank: true } }),
+  ]);
+  const prioritized = prioritizeCandidates(candidates,
+    new Map(recentScores.map(({ driverId, _sum }) => [driverId, _sum.points || 0])),
+    new Map(awards.map(({ driverId, _min }) => [driverId, _min.rank])));
 
   const rules = await client.scoreRule.findMany();
   const pickupToDropoffMeters = distanceMeters(
@@ -509,10 +528,12 @@ async function createNextOffer(driver, client = prisma) {
     },
   });
   await client.offer.createMany({
-    data: candidates.map((candidate) => ({
+    data: prioritized.map((candidate, index) => ({
       driverId: candidate.id,
       orderId: order.id,
-      expiresAt: new Date(Date.now() + offerTtlMilliseconds),
+      status: index === 0 ? 'PENDING' : 'QUEUED',
+      priorityRank: index + 1,
+      expiresAt: index === 0 ? new Date(Date.now() + offerTtlMilliseconds) : null,
       estimatedPoints: scoreSnapshot.estimatedPoints,
       scoreBreakdown: JSON.stringify(scoreSnapshot.breakdown),
       distanceToPickupMeters: candidate.distanceToPickupMeters,
@@ -522,12 +543,27 @@ async function createNextOffer(driver, client = prisma) {
 
 async function restoreOrderWhenCandidatesAreGone(orderId, client = prisma) {
   const pending = await client.offer.count({ where: { orderId, status: 'PENDING' } });
-  if (!pending) {
-    await client.order.updateMany({
-      where: { id: orderId, status: 'OFFERING' },
-      data: { status: 'CREATED' },
+  if (pending) return;
+  const order = await client.order.findUnique({ where: { id: orderId }, select: { status: true } });
+  if (order?.status !== 'OFFERING') return;
+  const waiting = await client.offer.findMany({
+    where: { orderId, status: 'QUEUED' }, orderBy: [{ priorityRank: 'asc' }, { id: 'asc' }],
+    include: { driver: true },
+  });
+  for (const candidate of waiting) {
+    const otherPending = await client.offer.count({ where: { driverId: candidate.driverId, status: 'PENDING' } });
+    if (candidate.driver.status !== 'IDLE' || !candidate.driver.shiftStartedAt
+        || locationStatus(candidate.driver) !== 'AVAILABLE' || otherPending) {
+      await client.offer.updateMany({ where: { id: candidate.id, status: 'QUEUED' }, data: { status: 'WITHDRAWN' } });
+      continue;
+    }
+    const promoted = await client.offer.updateMany({
+      where: { id: candidate.id, status: 'QUEUED' },
+      data: { status: 'PENDING', expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
     });
+    if (promoted.count) return;
   }
+  await client.order.updateMany({ where: { id: orderId, status: 'OFFERING' }, data: { status: 'CREATED' } });
 }
 
 async function expireOffers(client) {
@@ -572,6 +608,7 @@ async function ensureSeed() {
     includeRankings: process.env.DEMO_RANKING_SEED !== 'false',
   });
   await clearExpiredLocations();
+  await monthlyAwardMaintenance.onActivity();
   const driver = await currentDriver();
 
   await prisma.offer.updateMany({
@@ -614,6 +651,7 @@ async function dashboardSnapshot(driverId, client) {
     where: { driverId: driver.id, deliveredAt: null },
     include: { order: { include: { store: true } } },
   });
+  const offerWaiting = !offer && await client.offer.count({ where: { driverId, status: 'QUEUED' } }) > 0;
   return {
     driver: publicDriver(driver),
     location: publicLocation(driver),
@@ -633,6 +671,7 @@ async function dashboardSnapshot(driverId, client) {
       }
       : null,
     simulator: { weatherCondition: simulatedWeatherCondition },
+    offerWaiting,
   };
 }
 
@@ -656,7 +695,7 @@ function buildDriverTitle(lifetimeScore) {
 
 async function driverScore(driverId) {
   const windowStartedAt = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
-  const [driver, currentScore, recentEvents] = await prisma.$transaction([
+  const [driver, currentScore, recentEvents, bestMonthlyAward] = await prisma.$transaction([
     prisma.driver.findUnique({ where: { id: driverId }, select: { score: true } }),
     prisma.scoreEvent.aggregate({
       where: { driverId, createdAt: { gte: windowStartedAt } },
@@ -670,12 +709,17 @@ async function driverScore(driverId) {
       orderBy: { createdAt: 'desc' },
       take: 20,
     }),
+    prisma.monthlyAward.findFirst({
+      where: { driverId }, orderBy: [{ rank: 'asc' }, { month: 'desc' }],
+      select: { month: true, rank: true, title: true },
+    }),
   ]);
   return {
     currentScore: currentScore._sum.points || 0,
     lifetimeScore: driver.score,
     windowDays: scoreWindowDays,
     title: buildDriverTitle(driver.score),
+    bestMonthlyAward,
     recentEvents: recentEvents.map((event) => ({
       ...event,
       breakdown: parseBreakdown(event.breakdown),
@@ -689,7 +733,7 @@ async function updateSimulatorWeather(condition, client) {
   }
   const rules = await client.scoreRule.findMany();
   const pendingOffers = await client.offer.findMany({
-    where: { status: 'PENDING', driver: { status: 'IDLE' } },
+    where: { status: { in: ['PENDING', 'QUEUED'] }, driver: { status: 'IDLE' } },
     include: { order: { include: { store: true } } },
   });
   for (const offer of pendingOffers) {
@@ -742,14 +786,7 @@ function buildRanking(drivers, scoresByDriverId, currentDriverId) {
 }
 
 function currentJapanMonthWindow(now = new Date()) {
-  const japanTime = new Date(now.getTime() + japanUtcOffsetMilliseconds);
-  const year = japanTime.getUTCFullYear();
-  const monthIndex = japanTime.getUTCMonth();
-  return {
-    label: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
-    startsAt: new Date(Date.UTC(year, monthIndex, 1) - japanUtcOffsetMilliseconds),
-    endsAt: new Date(Date.UTC(year, monthIndex + 1, 1) - japanUtcOffsetMilliseconds),
-  };
+  return japanMonthWindow(now);
 }
 
 function addMonthlyTitles(period) {
@@ -940,7 +977,7 @@ async function endShift(driver, client) {
   const endedAt = new Date();
   const startedAt = driver.shiftStartedAt || endedAt;
   const pendingOffers = await client.offer.findMany({
-    where: { driverId: driver.id, status: 'PENDING' },
+    where: { driverId: driver.id, status: { in: ['PENDING', 'QUEUED'] } },
     select: { orderId: true },
   });
   const completedDeliveries = await client.assignment.count({
@@ -951,7 +988,7 @@ async function endShift(driver, client) {
     _sum: { points: true },
   });
   await client.offer.updateMany({
-    where: { driverId: driver.id, status: 'PENDING' },
+    where: { driverId: driver.id, status: { in: ['PENDING', 'QUEUED'] } },
     data: { status: 'REJECTED' },
   });
   const updated = await client.driver.update({
@@ -1093,7 +1130,7 @@ async function acceptOffer(driver, offerId, transaction) {
 
   const offer = await transaction.offer.findUnique({ where: { id: offerId } });
   const siblingOffers = await transaction.offer.findMany({
-    where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
+    where: { orderId: offer.orderId, id: { not: offerId }, status: { in: ['PENDING', 'QUEUED'] } },
     select: { driverId: true },
   });
   const assigned = await transaction.order.updateMany({
@@ -1105,7 +1142,7 @@ async function acceptOffer(driver, offerId, transaction) {
   }
 
   await transaction.offer.updateMany({
-    where: { orderId: offer.orderId, id: { not: offerId }, status: 'PENDING' },
+    where: { orderId: offer.orderId, id: { not: offerId }, status: { in: ['PENDING', 'QUEUED'] } },
     data: { status: 'WITHDRAWN' },
   });
   if (siblingOffers.length) {
@@ -1369,6 +1406,17 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/api/drivers/me/score') {
     return json(response, 200, await driverScore(driver.id));
   }
+  if (request.method === 'GET' && url.pathname === '/api/drivers/me/monthly-awards') {
+    const raw = url.searchParams.get('cursor');
+    const cursor = raw === null ? null : Number(raw);
+    if (raw !== null && (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(cursor) || cursor > 2_147_483_647)) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'cursorには正の整数を指定してください');
+    }
+    const result = await listMonthlyAwards(prisma, driver.id, cursor);
+    if (!result) throw new ApiError(404, 'MONTHLY_AWARD_NOT_FOUND', '称号の履歴が見つかりません');
+    response.setHeader('Cache-Control', 'no-store');
+    return json(response, 200, result);
+  }
   if (request.method === 'GET' && url.pathname === '/api/drivers/ranking') {
     return json(response, 200, await driverRanking(driver.id));
   }
@@ -1473,7 +1521,7 @@ const server = http.createServer(async (request, response) => {
 realtimeHub = createRealtimeHub(server, authenticateAccessToken);
 server.on('close', () => locationMaintenance.stop());
 
-ensureSeed().then(() => {
+ensureSeed().then(() => monthlyAwardMaintenance.onActivity()).then(() => {
   server.listen(port, () => {
     console.log(`DeliveryFlow is running at http://localhost:${port}`);
     locationMaintenance.start();
