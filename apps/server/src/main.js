@@ -204,6 +204,7 @@ function publicDriver(driver) {
     locationAccuracyMeters,
     locationUpdatedAt,
     locationSource,
+    lastOfferedAt,
     ...safeDriver
   } = driver;
   return safeDriver;
@@ -455,6 +456,9 @@ async function recoverInterruptedDelivery(client, driver, endpoint) {
 }
 
 async function createNextOffer(driver, client = prisma) {
+  if (client === prisma) {
+    return databaseTransaction((transaction) => createNextOffer(driver, transaction));
+  }
   const existing = await client.offer.count({
     where: { driverId: driver.id, status: { in: ['PENDING', 'QUEUED'] } },
   });
@@ -539,6 +543,10 @@ async function createNextOffer(driver, client = prisma) {
       distanceToPickupMeters: candidate.distanceToPickupMeters,
     })),
   });
+  await client.driver.update({
+    where: { id: prioritized[0].id },
+    data: { lastOfferedAt: now },
+  });
 }
 
 async function restoreOrderWhenCandidatesAreGone(orderId, client = prisma) {
@@ -557,11 +565,15 @@ async function restoreOrderWhenCandidatesAreGone(orderId, client = prisma) {
       await client.offer.updateMany({ where: { id: candidate.id, status: 'QUEUED' }, data: { status: 'WITHDRAWN' } });
       continue;
     }
+    const now = new Date();
     const promoted = await client.offer.updateMany({
       where: { id: candidate.id, status: 'QUEUED' },
-      data: { status: 'PENDING', expiresAt: new Date(Date.now() + offerTtlMilliseconds) },
+      data: { status: 'PENDING', expiresAt: new Date(now.getTime() + offerTtlMilliseconds) },
     });
-    if (promoted.count) return;
+    if (promoted.count) {
+      await client.driver.update({ where: { id: candidate.driverId }, data: { lastOfferedAt: now } });
+      return;
+    }
   }
   await client.order.updateMany({ where: { id: orderId, status: 'OFFERING' }, data: { status: 'CREATED' } });
 }

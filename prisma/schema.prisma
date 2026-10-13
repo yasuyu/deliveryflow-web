@@ -28,6 +28,7 @@ model Driver {
   pinHash         String?
   status         String       @default("OFFLINE")
   shiftStartedAt DateTime?
+  lastOfferedAt  DateTime?
   score          Int          @default(0)
   latitude       Float?
   longitude      Float?

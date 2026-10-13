@@ -28,7 +28,7 @@ test('近いn人に絞った後、14日ポイントと獲得済み月間称号�
   assert.deepEqual(ranked.map(({ priority }) => priority), [500, 400, 300]);
 });
 
-test('距離・月間称号の重みと、同評価なら距離・IDの順を守る', () => {
+test('距離・月間称号の重みと、同評価なら距離を優先する', () => {
   const ranked = prioritizeCandidates([
     { id: 4, distanceToPickupMeters: 400 }, { id: 2, distanceToPickupMeters: 100 },
     { id: 1, distanceToPickupMeters: 100 }, { id: 3, distanceToPickupMeters: 0 },
@@ -37,7 +37,7 @@ test('距離・月間称号の重みと、同評価なら距離・IDの順を守
   assert.ok(ranked.every(({ priority }) => priority === 100));
 });
 
-test('現在地の更新時刻は候補順位に使わず、同距離ならID順にする', () => {
+test('現在地の更新時刻は候補順位に使わず、提示履歴も同じならID順にする', () => {
   const candidates = nearestDrivers([
     { id: 2, latitude: 35, longitude: 135.01, locationUpdatedAt: new Date('2026-09-15') },
     { id: 1, latitude: 35, longitude: 135.01, locationUpdatedAt: new Date('2020-01-01') },
@@ -45,4 +45,29 @@ test('現在地の更新時刻は候補順位に使わず、同距離ならID順
   ], store, 3);
 
   assert.deepEqual(candidates.map((candidate) => candidate.id), [1, 2]);
+});
+
+test('同条件なら未提示、古い提示時刻、新しい提示時刻の順にする', () => {
+  const candidates = [
+    { id: 1, distanceToPickupMeters: 100, lastOfferedAt: new Date('2026-10-13T11:00:00Z') },
+    { id: 2, distanceToPickupMeters: 100, lastOfferedAt: new Date('2026-10-13T10:00:00Z') },
+    { id: 3, distanceToPickupMeters: 100, lastOfferedAt: null },
+    { id: 4, distanceToPickupMeters: 100, lastOfferedAt: new Date('2026-10-13T10:00:00Z') },
+  ];
+  const ranked = prioritizeCandidates(candidates, new Map(), new Map());
+  assert.deepEqual(ranked.map(({ id }) => id), [3, 2, 4, 1]);
+  // Waiting time never overrides a higher weighted priority or shorter distance.
+  assert.equal(prioritizeCandidates(candidates, new Map([[1, 1]]), new Map())[0].id, 1);
+  const closer = { ...candidates[0], distanceToPickupMeters: 0 };
+  assert.equal(prioritizeCandidates([candidates[2], closer], new Map([[3, 100]]), new Map())[0].id, 1);
+});
+
+test('候補人数の上限でも、同距離なら長く待っている人を残す', () => {
+  const candidates = nearestDrivers([
+    { id: 1, ...store, lastOfferedAt: new Date('2026-10-13T11:00:00Z') },
+    { id: 2, ...store, lastOfferedAt: new Date('2026-10-13T10:00:00Z') },
+    { id: 3, ...store, lastOfferedAt: null },
+    { id: 4, ...store, lastOfferedAt: new Date('2026-10-13T09:00:00Z') },
+  ], store, 3);
+  assert.deepEqual(candidates.map(({ id }) => id), [3, 4, 2]);
 });

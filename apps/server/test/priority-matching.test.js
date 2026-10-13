@@ -162,8 +162,16 @@ test('今月0ポイントには暫定称号を表示せず、正の同点には�
 test('辞退後は同じ注文を次候補へ渡し、待機順位は再起動で保持する', async (t) => {
   const f = await fixture(t);
   const offers = await f.active();
+  const firstTime = (await f.db.driver.findUnique({ where: { id: f.drivers[1].id } })).lastOfferedAt;
+  assert.ok(firstTime instanceof Date);
+  assert.equal('lastOfferedAt' in (await f.request(1, '/api/dashboard')).body.driver, false);
+  assert.equal((await f.db.driver.findUnique({ where: { id: f.drivers[0].id } })).lastOfferedAt, null);
   await f.stop(); await f.start();
-  assert.equal((await f.request(1, '/api/offers/current', 'POST')).status, 200);
+  const key = randomUUID();
+  assert.equal((await f.request(1, '/api/offers/current', 'POST', key)).status, 200);
+  assert.equal((await f.request(1, '/api/offers/current', 'POST', key)).status, 200);
+  assert.equal((await f.request(1, '/api/dashboard')).status, 200);
+  assert.equal((await f.db.driver.findUnique({ where: { id: f.drivers[1].id } })).lastOfferedAt.getTime(), firstTime.getTime());
   assert.equal((await f.request(1, '/api/simulator/weather', 'POST', randomUUID(), { condition: 'RAIN' })).status, 200);
   const snapshots = await f.db.offer.findMany({ where: { orderId: offers[0].orderId }, orderBy: { priorityRank: 'asc' } });
   assert.equal(snapshots[0].estimatedPoints, offers[0].estimatedPoints);
@@ -174,6 +182,8 @@ test('辞退後は同じ注文を次候補へ渡し、待機順位は再起動�
   assert.equal(next.status, 200);
   assert.equal(next.body.orderId, offers[0].orderId);
   assert.equal(next.body.priorityRank, 2);
+  assert.ok((await f.db.driver.findUnique({ where: { id: f.drivers[0].id } })).lastOfferedAt >= firstTime);
+  assert.equal((await f.db.driver.findUnique({ where: { id: f.drivers[2].id } })).lastOfferedAt, null);
 });
 
 test('期限切れと待機候補の退勤を処理し、次の有効候補へ提示する', async (t) => {
@@ -185,6 +195,35 @@ test('期限切れと待機候補の退勤を処理し、次の有効候補へ�
   assert.equal(dashboard.body.offer.id, offers[2].id);
   assert.equal(dashboard.body.offerWaiting, false);
   assert.equal((await f.request(2, '/api/offers/current', 'POST')).body.orderId, offers[0].orderId);
+  assert.equal((await f.db.driver.findUnique({ where: { id: f.drivers[0].id } })).lastOfferedAt, null);
+  assert.ok((await f.db.driver.findUnique({ where: { id: f.drivers[2].id } })).lastOfferedAt instanceof Date);
+});
+
+test('同条件の4人でも候補上限3人による固定化を避け、再起動後も提示順が回る', async (t) => {
+  const f = await fixture(t);
+  // Only this fixture's isolated database is changed.
+  await f.db.scoreEvent.deleteMany();
+  await f.db.monthlyAward.deleteMany();
+  const ids = f.drivers.slice(0, 4).map(({ id }) => id);
+  await f.db.driver.updateMany({ where: { id: { in: ids } }, data: {
+    status: 'IDLE', shiftStartedAt: new Date(), locationUpdatedAt: new Date(),
+    latitude: 35.011, longitude: 135.768, locationSource: 'DEVICE',
+  } });
+  for (let index = 0; index < 4; index++) {
+    assert.equal((await f.request(index, '/api/dashboard')).status, 200);
+    const pending = await f.db.offer.findFirst({ where: { status: 'PENDING' } });
+    assert.equal(pending.driverId, ids[index]);
+    const queued = await f.db.offer.count({ where: { status: 'QUEUED' } });
+    assert.equal(queued, 2);
+    const timestamp = (await f.db.driver.findUnique({ where: { id: ids[index] } })).lastOfferedAt;
+    assert.ok(timestamp instanceof Date);
+    if (index === 0) {
+      assert.equal(await f.db.offer.count({ where: { driverId: ids[3] } }), 0);
+      await f.stop(); await f.start();
+      assert.equal((await f.db.driver.findUnique({ where: { id: ids[index] } })).lastOfferedAt.getTime(), timestamp.getTime());
+    }
+    await f.db.offer.updateMany({ where: { status: { in: ['PENDING', 'QUEUED'] } }, data: { status: 'WITHDRAWN' } });
+  }
 });
 
 test('月間称号の履歴は本人だけに20件ずつ返し、不正なカーソルを拒否する', async (t) => {

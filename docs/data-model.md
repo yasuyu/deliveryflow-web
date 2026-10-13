@@ -35,6 +35,7 @@ ScoreRule（加点ルールのマスター）
 | `pinHash` | ソルト付きscryptで変換したPIN。平文は保存しない |
 | `status` | `OFFLINE`、`IDLE`、`OFFERED`、`BUSY` |
 | `shiftStartedAt` | 現在の勤務開始時刻 |
+| `lastOfferedAt` | 最後に受諾可能なオファー（PENDING）を提示した時刻。同条件の待ち時間比較に使い、退勤・再起動後も保持。旧データや未提示はnull |
 | `score` | 全期間の累計スコア |
 | `latitude`, `longitude` | 勤務中のデモ位置、または約100m単位に丸めた最新端末座標 |
 | `locationAccuracyMeters` | 丸め幅を含めた推定精度。デモ位置では`null` |
