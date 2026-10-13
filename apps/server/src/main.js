@@ -204,6 +204,7 @@ function publicDriver(driver) {
     locationAccuracyMeters,
     locationUpdatedAt,
     locationSource,
+    lastOfferedAt,
     ...safeDriver
   } = driver;
   return safeDriver;

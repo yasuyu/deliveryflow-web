@@ -164,6 +164,7 @@ test('辞退後は同じ注文を次候補へ渡し、待機順位は再起動�
   const offers = await f.active();
   const firstTime = (await f.db.driver.findUnique({ where: { id: f.drivers[1].id } })).lastOfferedAt;
   assert.ok(firstTime instanceof Date);
+  assert.equal('lastOfferedAt' in (await f.request(1, '/api/dashboard')).body.driver, false);
   assert.equal((await f.db.driver.findUnique({ where: { id: f.drivers[0].id } })).lastOfferedAt, null);
   await f.stop(); await f.start();
   const key = randomUUID();
