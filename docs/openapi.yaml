@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DeliveryFlow API
-  version: 0.13.1
+  version: 0.14.0
   description: 配達員の稼働と配達ライフサイクルを扱う学習用API。勤務・配達の状態確認と更新は直列化可能なDBトランザクションで実行し、同時操作でも矛盾した状態を保存しない。
 x-browser-request-policy:
   timeoutMilliseconds: 30000
@@ -367,7 +367,7 @@ paths:
   /api/offers/current:
     post:
       summary: 現在のオファーを確認する IDLE to OFFERED
-      description: 店舗に近い最大N人を選び、直近14日ポイント/100＋過去の最高月間称号の評価値（1位3・2位2・3位1・未獲得0）−店舗までの距離m/100で順位を決める。同評価は距離、次にID順。1人だけPENDINGで提示し、後続はQUEUEDとしてDBに保存する。辞退・期限切れ・退勤で次の有効候補へ提示する。待機候補は404で、ダッシュボードのofferWaiting=trueを確認できる。累計ポイントの称号は優先度へ使用しない。旧版の作成済みオファーは維持する。
+      description: 店舗に近い最大N人を選び、直近14日ポイント/100＋過去の最高月間称号の評価値（1位3・2位2・3位1・未獲得0）−店舗までの距離m/100で順位を決める。同評価は距離、次に最後のオファー提示時刻が古い人を優先。近いN人への選定も同距離なら提示時刻順。記録なしを先にし、同時刻はID順。1人だけPENDINGで提示し、その人のlastOfferedAtをDBに保存する。後続はQUEUEDで、提示時刻を更新しない。再取得・再送・画面更新でも同じオファーの提示時刻は変えない。辞退・期限切れ・退勤で次の有効候補をPENDINGへ進め、その時点で提示時刻を保存する。提示時刻は店舗をまたいで使い、退勤・再起動後も保持する。旧データの提示時刻は推測せず記録なしとして扱う。待機候補は404で、ダッシュボードのofferWaiting=trueを確認できる。累計ポイントの称号は優先度へ使用しない。旧版の作成済みオファーは維持する。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:

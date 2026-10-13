@@ -1,0 +1,1 @@
+ALTER TABLE "Driver" ADD COLUMN "lastOfferedAt" TIMESTAMP(3);

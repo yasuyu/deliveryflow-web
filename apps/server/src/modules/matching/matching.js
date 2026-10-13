@@ -1,5 +1,14 @@
 const { distanceMeters } = require('../location/location');
 
+// A missing timestamp means no offer has been recorded yet. Keep ID only as
+// the final deterministic fallback when both waiting times are identical.
+function compareOfferWait(left, right) {
+  const leftTime = left.lastOfferedAt ? new Date(left.lastOfferedAt).getTime() : -Infinity;
+  const rightTime = right.lastOfferedAt ? new Date(right.lastOfferedAt).getTime() : -Infinity;
+  if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+  return left.id - right.id;
+}
+
 function nearestDrivers(drivers, store, limit) {
   return drivers
     .filter((driver) => Number.isFinite(driver.latitude) && Number.isFinite(driver.longitude))
@@ -11,7 +20,7 @@ function nearestDrivers(drivers, store, limit) {
       ),
     }))
     .sort((left, right) => left.distanceToPickupMeters - right.distanceToPickupMeters
-      || left.id - right.id)
+      || compareOfferWait(left, right))
     .slice(0, limit);
 }
 
@@ -24,7 +33,7 @@ function prioritizeCandidates(candidates, recentScores, bestMonthlyRanks) {
     // recentPoints / 100 + titleValue - distanceMeters / 100.
     return { ...candidate, priority: points + titleValue * 100 - candidate.distanceToPickupMeters };
   }).sort((a, b) => b.priority - a.priority
-    || a.distanceToPickupMeters - b.distanceToPickupMeters || a.id - b.id);
+    || a.distanceToPickupMeters - b.distanceToPickupMeters || compareOfferWait(a, b));
 }
 
 module.exports = { nearestDrivers, prioritizeCandidates };
